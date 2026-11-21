@@ -155,7 +155,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 **Milestone done when:** you can pour a puddle of a single color, tilt the canvas, and it flows and runs off the edge looking like glossy liquid.
 
 ### M1-01 CPU thin-film solver
-- **Status:** review. Audit round 2 = [pass once CI is green](audits/2026-11-21-M1-01.md). Remaining: the CI timeout in the sharp-box test.
+- **Status:** done ([audit](audits/2026-11-21-M1-01.md), round 2 pass; CI timeout fixed in 8a19f73)
 - **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
