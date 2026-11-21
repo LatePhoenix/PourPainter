@@ -51,18 +51,23 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (9 tests). No new runtime dependencies.
 
 ### M0-02 Domain types, physics constants, seeded RNG
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M0-01
 - **Goal:** Pure data types that the sim and UI share.
 - **Acceptance criteria:**
-  - [ ] `src/domain/paint.ts`: `Paint` (id, name, rgb, density g/ml, mediumRatio, waterRatio, siliconeDrops) and a starter preset list of about 12 pigments with plausible relative densities (Titanium White heaviest, then the cadmium-style colors, with phthalos and quinacridones lighter)
-  - [ ] `src/domain/cup.ts`: `Cup` (type: single | split | funnel | colander | squeeze; ordered layers of {paintId, volume ml})
-  - [ ] `src/domain/recipe.ts`: `Recipe` (canvas size/shape, paints, cup, technique id, seed, recorded tool actions). JSON serialize/parse with a version field.
-  - [ ] `src/domain/physics.ts`: every physical constant and default (gravity, base viscosity, surface tension, silicone σ reduction, drying rate) with units in comments
-  - [ ] `src/sim/rng.ts`: a seeded PRNG (e.g. mulberry32 or PCG); test that the same seed gives the same sequence
-  - [ ] Unit tests for recipe round-trip
-  - [ ] _(from M0-01b audit)_ Add a `format:check` script (`prettier --check .`), include it in `check`, and run `npm run format` once so the repo is clean
+  - [x] `src/domain/paint.ts`: `Paint` (id, name, rgb, density g/ml, mediumRatio, waterRatio, siliconeDrops) and a starter preset list of about 12 pigments with plausible relative densities (Titanium White heaviest, then the cadmium-style colors, with phthalos and quinacridones lighter)
+  - [x] `src/domain/cup.ts`: `Cup` (type: single | split | funnel | colander | squeeze; ordered layers of {paintId, volume ml})
+  - [x] `src/domain/recipe.ts`: `Recipe` (canvas size/shape, paints, cup, technique id, seed, recorded tool actions). JSON serialize/parse with a version field.
+  - [x] `src/domain/physics.ts`: every physical constant and default (gravity, base viscosity, surface tension, silicone σ reduction, drying rate) with units in comments
+  - [x] `src/sim/rng.ts`: a seeded PRNG (e.g. mulberry32 or PCG); test that the same seed gives the same sequence
+  - [x] Unit tests for recipe round-trip
+  - [x] _(from M0-01b audit)_ Add a `format:check` script (`prettier --check .`), include it in `check`, and run `npm run format` once so the repo is clean
 - **Handoff notes:**
+  - Added `paint.ts` (12 presets, Ti white → cadmiums → earths → ultramarine/black → phthalos → quinacridones), `cup.ts`, `recipe.ts` (versioned JSON + typed tool actions), `physics.ts` (g, μ, σ, silicone σ cut, drying, tilt, temp coeffs; units in comments), `sim/rng.ts` (Mulberry32).
+  - Tests: recipe round-trip + reject bad version/actions; RNG determinism; preset density ordering.
+  - `format:check` added to `check`; ran `npm run format` (touched `eslint.config.js`, `recipe.ts`, `import-boundary.test.ts`). README Commands updated.
+  - Barrel exports updated in `src/domain/index.ts` and `src/sim/index.ts`. No new dependencies.
+  - `npm run check` passes (19 tests). Densities are plausible relative acrylic values, not lab SG — tune later against real pours if needed.
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
 - **Status:** todo

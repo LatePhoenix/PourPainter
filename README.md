@@ -35,5 +35,6 @@ Starter prompt for Claude Code:
 | `npm test` | Vitest unit tests (single run) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc -b` |
-| `npm run check` | typecheck + lint + test (required before `review`) |
+| `npm run check` | typecheck + lint + format:check + test (required before `review`) |
 | `npm run format` | Prettier write |
+| `npm run format:check` | Prettier check (no write) |
