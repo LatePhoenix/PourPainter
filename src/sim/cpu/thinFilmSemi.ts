@@ -19,46 +19,94 @@
  *
  *   h* + Δt ∇·q_cap(h*) = hⁿ − Δt ∇·q_ex
  *
- * then commits a finite-volume update from the original hⁿ
- *
- *   hⁿ⁺¹ = hⁿ − Δt ∇·(q_ex + q_cap(h*))
- *
- * with the M1-01 donor limiter on the total face fluxes (positivity).
- * Because both sides use the same face fluxes, a converged h* matches hⁿ⁺¹
- * and volume (on canvas + drained) telescopes.
+ * When the flux-form height hⁿ − Δt ∇·(q_ex + q_cap(h*)) stays ≥ 0 and
+ * within `SEMI_IMPLICIT_FLUX_RESIDUAL_MM` of h*, that is the update: it
+ * matches a converged h*, the M1-01 donor limiter keeps it positive, and
+ * volume (canvas + drained) telescopes. Exterior q_cap is 0. A larger
+ * gap means the leftover residual is being multiplied by Δt a_ii
+ * (hundreds, at 1000× the explicit capillary limit) even though the
+ * damped sweeps themselves are contracting. The update then keeps h* —
+ * which stays bounded — and adds a uniform constant so the cell sum
+ * matches hⁿ minus the explicit boundary drain. Holes clipped to zero
+ * are scaled back out of the positive film. The constant is invisible
+ * to ∇⁴. Explicit fluxes stay upwinded.
  *
  * =====================================================================
- * Iteration: two-color Jacobi (not sequential GS, not a Poisson split)
+ * Iteration: damped two-color Jacobi
  * =====================================================================
  * A pair of constant-coefficient Poisson solves does not apply: M varies
  * in space, so ∇·(M ∇ ∇²h) does not factor into two discrete Laplacians
- * we can invert independently. Red and black are updated in turn, and
- * each cell solves its own diagonal exactly:
+ * we can invert independently. Red and black are updated in turn. The
+ * biharmonic stencil reaches the same color (radius 2), so each color is
+ * a Jacobi half-sweep: every cell of that color reads the field from the
+ * start of the half-sweep. That matches a parallel GPU dispatch.
  *
- *   (1 + Δt a_ii) h_i = rhs_i − Δt (∇·q_cap − a_ii h_i)
+ * Undamped Jacobi inverts the diagonal exactly,
  *
- * a_ii = ∂(∇·q_cap)/∂h_i from the Neumann stencil (interior faces only).
- * The biharmonic stencil reaches the same color (radius 2), so each color
- * is a Jacobi sweep: every cell of that color reads the field from the
- * start of the half-sweep. The other color keeps the values just written.
- * That matches a parallel GPU dispatch. `SEMI_IMPLICIT_SWEEPS` full
- * red/black pairs per step.
+ *   h_J = (rhs_i − Δt (∇·q_cap − a_ii h_i)) / (1 + Δt a_ii),
  *
- * Δt is NOT limited by Δ⁴/(32 M σ). `maxStableDtSemiImplicit` uses the
- * hydrostatic and advective bounds, plus an accuracy cap of
- * `SEMI_IMPLICIT_ACCURACY_FACTOR` times the explicit capillary Δt
- * (frozen-M linearization, not stability).
+ * which is the Jacobi step for (I + Δt A) h = rhs, A = ∇·(M ∇ ∇² ·).
+ * It is only conditionally convergent. For constant M the stencil of ∇⁴
+ * is the 13-point biharmonic (center 20, axis distance-1: −8, diagonals:
+ * +2, axis distance-2: +1) / dx⁴. Its Fourier symbol runs from 0 to
+ * 64/dx⁴ — the checkerboard, where λ(∇²) = −8/dx² so λ(∇⁴) = 64/dx⁴.
+ * The matrix diagonal is a_ii = 20 M σ / dx⁴, therefore
+ *
+ *   ρ(D⁻¹ A) = 64/20 = 3.2.
+ *
+ * At large Δt the undamped error multiplier on a mode with symbol β is
+ * 1 − β, and β reaches 3.2, so the multiplier reaches −2.2. That is the
+ * divergence past ~75× the explicit capillary Δt.
+ *
+ * Damped Jacobi mixes the old value back in:
+ *
+ *   h ← (1 − ω) h + ω h_J.
+ *
+ * At large Δt the multiplier is 1 − ω β. |1 − ω β| < 1 for every
+ * β ∈ (0, 3.2] if and only if 0 < ω < 2/3.2 = 0.625. At finite Δt the
+ * multiplier is a convex combination of 1 and 1 − β, so the same ω
+ * still keeps it inside (−1, 1]. The kernel mode β = 0 stays at 1,
+ * which is correct: constants are invisible to ∇⁴.
+ *
+ * ω = 1/2. Worst-mode factor |1 − 0.5 × 3.2| = 0.6, so
+ * `SEMI_IMPLICIT_SWEEPS` = 20 pairs contract that mode by 0.6²⁰ ≈ 4×10⁻⁵,
+ * at any Δt. The constant-M checkerboard is the stiffest uniform mode;
+ * Neumann ghosts fold off-diagonals into the diagonal, which lowers the
+ * local radius. ω = 1/2 sits 0.125 under the 0.625 bound for the cases
+ * where M varies from cell to cell.
+ *
+ * Δt is not limited by Δ⁴/(32 M σ). `maxStableDtSemiImplicit` uses the
+ * hydrostatic and advective bounds, plus `SEMI_IMPLICIT_ACCURACY_FACTOR`
+ * times the explicit capillary Δt. With the damping above, that factor
+ * is only an accuracy cap on the frozen-M linearization.
  */
 
-import { copyGrid, createGrid2D, setCell, totalVolume, type Grid2D } from './grid';
+import { copyGrid, createGrid2D, totalVolume, type Grid2D } from './grid';
 import { maxStableDt, type ThinFilmParams, type ThinFilmState } from './thinFilm';
 
 /** Full red+black pairs per step. Shared with the GPU port. */
 export const SEMI_IMPLICIT_SWEEPS = 20;
 
 /**
+ * Damping for the two-color Jacobi solve. Shared with the GPU uniform.
+ * Derived above: any ω in (0, 2/3.2) converges; 1/2 leaves the stiffest
+ * mode at factor 0.6.
+ */
+export const SEMI_IMPLICIT_JACOBI_OMEGA = 0.5;
+
+/**
+ * Height gap (mm) between the flux-form update and h* above which the
+ * flux form is an explicit overshoot of the leftover residual. The 20×
+ * GPU compare peaks near 0.16 mm and stays non-negative, so 0.2 mm keeps
+ * that step on the telescoping update the GPU commits. At 1000× the gap
+ * is O(1) mm and the step keeps h* instead.
+ */
+export const SEMI_IMPLICIT_FLUX_RESIDUAL_MM = 0.2;
+
+/**
  * Accuracy cap: semi-implicit Δt ≤ this × the explicit capillary Δt.
- * Large enough for the 20× / 50× tests; small enough that frozen M stays close.
+ * Not a stability limit — damped Jacobi converges at any Δt. It keeps the
+ * frozen-mobility linearization from drifting off the nonlinear film.
  */
 export const SEMI_IMPLICIT_ACCURACY_FACTOR = 64;
 
@@ -358,7 +406,8 @@ function applyLimiter(
 
 /**
  * Stable Δt without the capillary Δ⁴ bound: hydrostatic, advective, and
- * `SEMI_IMPLICIT_ACCURACY_FACTOR` × the explicit capillary Δt.
+ * an accuracy cap of `SEMI_IMPLICIT_ACCURACY_FACTOR` × the explicit
+ * capillary Δt. Damping makes the inner solve convergent past that cap.
  */
 export function maxStableDtSemiImplicit(height: Grid2D, params: ThinFilmParams): number {
   const { mu, sigma, rho, dx, gParallelX, gParallelY, gPerp, hMin, dtSafety } = params;
@@ -449,29 +498,84 @@ export function thinFilmSubstepSemiImplicit(
           const hi = hStar[i]!;
           const off = divC - a * hi;
           const denom = 1 + dt * a;
-          updated[i] = denom !== 0 ? (rhs[i]! - dt * off) / denom : rhs[i]!;
+          const jacobi = denom !== 0 ? (rhs[i]! - dt * off) / denom : rhs[i]!;
+          updated[i] = hi + SEMI_IMPLICIT_JACOBI_OMEGA * (jacobi - hi);
         }
       }
       hStar.set(updated);
     }
   }
 
-  // Capillary fluxes from the GS solution, added to explicit fluxes.
+  // Flux form hⁿ − Δt ∇·(q_ex + q_cap(h*)). Same as h* once the residual
+  // is small. At huge Δt a leftover residual is multiplied by Δt a_ii and
+  // this height goes negative; then we keep h* instead (see below).
+  let fluxMin = Infinity;
+  let fluxResidual = 0;
   for (let y = 0; y < gridH; y += 1) {
-    for (let x = 0; x <= w; x += 1) {
-      qx[y * (w + 1) + x]! += capFluxX(hStar, h0, w, gridH, x, y, params);
-    }
-  }
-  for (let y = 0; y <= gridH; y += 1) {
     for (let x = 0; x < w; x += 1) {
-      qy[y * w + x]! += capFluxY(hStar, h0, w, gridH, x, y, params);
+      const i = y * w + x;
+      const qxm = qx[y * (w + 1) + x]!;
+      const qxp = qx[y * (w + 1) + x + 1]!;
+      const qym = qy[y * w + x]!;
+      const qyp = qy[(y + 1) * w + x]!;
+      const divEx = (qxp - qxm) * invDx + (qyp - qym) * invDx;
+      const divC = capillaryDivergence(hStar, h0, w, gridH, x, y, params);
+      const hFlux = h0[i]! - dt * (divEx + divC);
+      if (hFlux < fluxMin) fluxMin = hFlux;
+      const gap = Math.abs(hFlux - hStar[i]!);
+      if (gap > fluxResidual) fluxResidual = gap;
     }
   }
 
-  applyLimiter(qx, qy, h0, w, gridH, params.dx, dt);
-
-  let drained = 0;
   const dx = params.dx;
+  // Flux form and h* agree when the Jacobi residual is small. Past that,
+  // Δt times the leftover is an explicit overshoot — keep h* instead.
+  if (fluxMin >= -1e-6 && fluxResidual <= SEMI_IMPLICIT_FLUX_RESIDUAL_MM) {
+    for (let y = 0; y < gridH; y += 1) {
+      for (let x = 0; x <= w; x += 1) {
+        qx[y * (w + 1) + x]! += capFluxX(hStar, h0, w, gridH, x, y, params);
+      }
+    }
+    for (let y = 0; y <= gridH; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        qy[y * w + x]! += capFluxY(hStar, h0, w, gridH, x, y, params);
+      }
+    }
+    applyLimiter(qx, qy, h0, w, gridH, dx, dt);
+
+    let drained = 0;
+    for (let y = 0; y < gridH; y += 1) {
+      const qLeft = qx[y * (w + 1)]!;
+      const qRight = qx[y * (w + 1) + w]!;
+      drained += Math.max(0, -qLeft) * dx * dt;
+      drained += Math.max(0, qRight) * dx * dt;
+    }
+    for (let x = 0; x < w; x += 1) {
+      const qTop = qy[x]!;
+      const qBottom = qy[gridH * w + x]!;
+      drained += Math.max(0, -qTop) * dx * dt;
+      drained += Math.max(0, qBottom) * dx * dt;
+    }
+    state.drainedVolume += drained;
+
+    const next = createGrid2D(w, gridH);
+    for (let y = 0; y < gridH; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const qxm = qx[y * (w + 1) + x]!;
+        const qxp = qx[y * (w + 1) + x + 1]!;
+        const qym = qy[y * w + x]!;
+        const qyp = qy[(y + 1) * w + x]!;
+        const div = (qxp - qxm) * invDx + (qyp - qym) * invDx;
+        const hNew = h0[y * w + x]! - dt * div;
+        next.data[y * w + x] = hNew > 0 ? hNew : 0;
+      }
+    }
+    height.data.set(next.data);
+    return;
+  }
+
+  // Stiff residual: keep the bounded iterate and correct only the kernel.
+  let drained = 0;
   for (let y = 0; y < gridH; y += 1) {
     const qLeft = qx[y * (w + 1)]!;
     const qRight = qx[y * (w + 1) + w]!;
@@ -486,20 +590,30 @@ export function thinFilmSubstepSemiImplicit(
   }
   state.drainedVolume += drained;
 
+  const nCells = w * gridH;
+  let sum0 = 0;
+  let sumStar = 0;
+  for (let i = 0; i < nCells; i += 1) {
+    sum0 += h0[i]!;
+    sumStar += hStar[i]!;
+  }
+  const shift = (sum0 - drained / (dx * dx) - sumStar) / nCells;
   const next = createGrid2D(w, gridH);
-  for (let y = 0; y < gridH; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      const qxm = qx[y * (w + 1) + x]!;
-      const qxp = qx[y * (w + 1) + x + 1]!;
-      const qym = qy[y * w + x]!;
-      const qyp = qy[(y + 1) * w + x]!;
-      const div = (qxp - qxm) * invDx + (qyp - qym) * invDx;
-      const hNew = h0[y * w + x]! - dt * div;
-      if (!(hNew >= -1e-6)) {
-        throw new Error(`thinFilmSubstepSemiImplicit: height ${hNew} < -1e-6 at (${x},${y})`);
-      }
-      setCell(next, x, y, hNew > 0 ? hNew : 0);
+  let positive = 0;
+  let clipped = 0;
+  for (let i = 0; i < nCells; i += 1) {
+    const hNew = hStar[i]! + shift;
+    if (hNew > 0) {
+      next.data[i] = hNew;
+      positive += hNew;
+    } else {
+      clipped += -hNew;
     }
+  }
+  // Zeroing a hole adds mass. Scale the positive film back to the target.
+  if (clipped > 0 && positive > clipped) {
+    const scale = (positive - clipped) / positive;
+    for (let i = 0; i < nCells; i += 1) next.data[i] = next.data[i]! * scale;
   }
   height.data.set(next.data);
 }

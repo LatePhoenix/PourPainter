@@ -29,6 +29,8 @@ export {
 } from './thinFilm';
 export {
   SEMI_IMPLICIT_ACCURACY_FACTOR,
+  SEMI_IMPLICIT_FLUX_RESIDUAL_MM,
+  SEMI_IMPLICIT_JACOBI_OMEGA,
   SEMI_IMPLICIT_SWEEPS,
   capillaryDiagonal,
   capillaryDivergence,

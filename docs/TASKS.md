@@ -216,17 +216,22 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (84 tests). No new dependencies. Explicit solver unchanged. Drain counter and hMax epoch still belong to M1-04.
 
 ### M1-06b Unconditionally convergent semi-implicit solve
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M1-06
 - **Goal:** Remove the ~75× divergence cliff found in the [M1-06 audit](audits/2026-11-21-M1-06.md), so the 64× cap really is just an accuracy limit.
 - **Acceptance criteria:**
-  - [ ] The inner iteration converges for any Δt. Use **damped Jacobi** (ω from the stencil bound; document the derivation, ω ≈ 0.5 expected) or another scheme you can show is convergent (document it). Apply it in both the CPU reference and the GPU shaders.
-  - [ ] Stability test: a 1 mm film + 20% white noise (seeded), capillary only, dx = 300/512, Δt = **200×** and **1000×** the explicit capillary Δt, 60 steps. The std of the noise decreases and the peak stays ≤ the initial peak.
-  - [ ] No odd/even ripple: a Gaussian puddle (64², default params), 0.5 s at `dtSafety = 1.0`. The 2D roughness (mean |h − 4-neighbour average| over the interior) is within 10% of the explicit solver's, and the center row has exactly one interior maximum.
-  - [ ] Accuracy test with **default** params (σ from physics.ts, no overrides beyond dx): 64² puddle, 0.25 s, at 64× the explicit capillary Δt, relative L∞ vs explicit < 1%
-  - [ ] Fix the `SEMI_IMPLICIT_ACCURACY_FACTOR` comment so it matches reality once stability no longer depends on it. If sweep count or ω changes throughput, record the new 512² sim-s/wall-s in the handoff notes (target still ≥ 1).
-  - [ ] GPU "Compare to CPU" semi case still < 1e-3 relative
+  - [x] The inner iteration converges for any Δt. Use **damped Jacobi** (ω from the stencil bound; document the derivation, ω ≈ 0.5 expected) or another scheme you can show is convergent (document it). Apply it in both the CPU reference and the GPU shaders.
+  - [x] Stability test: a 1 mm film + 20% white noise (seeded), capillary only, dx = 300/512, Δt = **200×** and **1000×** the explicit capillary Δt, 60 steps. The std of the noise decreases and the peak stays ≤ the initial peak.
+  - [x] No odd/even ripple: a Gaussian puddle (64², default params), 0.5 s at `dtSafety = 1.0`. The 2D roughness (mean |h − 4-neighbour average| over the interior) is within 10% of the explicit solver's, and the center row has exactly one interior maximum.
+  - [x] Accuracy test with **default** params (σ from physics.ts, no overrides beyond dx): 64² puddle, 0.25 s, at 64× the explicit capillary Δt, relative L∞ vs explicit < 1%
+  - [x] Fix the `SEMI_IMPLICIT_ACCURACY_FACTOR` comment so it matches reality once stability no longer depends on it. If sweep count or ω changes throughput, record the new 512² sim-s/wall-s in the handoff notes (target still ≥ 1).
+  - [x] GPU "Compare to CPU" semi case still < 1e-3 relative
 - **Handoff notes:**
+  - Damping derivation is at the top of `src/sim/cpu/thinFilmSemi.ts`. Constant-M ∇⁴ has Fourier symbol 0…64/dx⁴ and diagonal 20 Mσ/dx⁴, so ρ(D⁻¹A) = 64/20 = 3.2. Undamped Jacobi at large Δt multiplies the stiff mode by 1−3.2 = −2.2. Damped Jacobi h ← (1−ω)h + ω h_J has multiplier 1−ωβ, which stays in (−1, 1] for every β ∈ (0, 3.2] iff 0 < ω < 2/3.2 = 0.625. **ω = 1/2** (`SEMI_IMPLICIT_JACOBI_OMEGA`), worst-mode factor 0.6. Still 20 sweeps. The same ω is the `jacobiOmega` uniform (the old pad slot at offset 36; struct stays 48 bytes) and the GPU sweep uses it.
+  - The flux-form commit hⁿ − Δt ∇·q(h*) matches h* only when the residual is small. Past that, Δt times the leftover drives cells negative even though the sweeps are contracting. If any flux height is < −1e-6 or |h_flux − h*| > 0.2 mm (`SEMI_IMPLICIT_FLUX_RESIDUAL_MM`), the step keeps h* and adds a uniform constant (invisible to ∇⁴) so the cell sum matches hⁿ minus explicit drain; clipped holes are scaled back out of the positive film. The 20× compare peaks near 0.16 mm, so it stays on the limited flux commit the GPU writes. 1000× is O(1) mm and takes the h* path. The 64× factor is now only an accuracy cap.
+  - Tests: seeded 1 mm ± 20% noise, dx = 300/512, capillary only, 60 steps at 200× and 1000× (std falls, peak ≤ start); 64² Gaussian, default params, dtSafety 1, 0.5 s, roughness within 10% of explicit and one interior maximum on the center row; 64², dx = 300/512 only, default σ, 0.25 s at 64×, rel L∞ < 1%. Previous semi tests still pass, including volume < 1e-6.
+  - Throughput unchanged (still 20 sweeps): nvidia, 512², semi mode, **60 fps, 22 substeps/frame, sim/wall 1.00e+0 s/s**. Compare: level 1.71e-7, mixed-dt 2.63e-7, tilt 3.89e-7 / drain 1.77e-5, **semi 1.84e-6**.
+  - `npm run check` passes (88 tests). No new dependencies. Explicit solver unchanged.
 
 ### M1-03 Tilt control
 - **Status:** todo

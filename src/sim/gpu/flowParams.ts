@@ -1,9 +1,11 @@
+import { SEMI_IMPLICIT_JACOBI_OMEGA } from '../cpu/thinFilmSemi';
 import type { ThinFilmParams } from '../cpu/thinFilm';
 import type { UniformField, UniformValue } from './uniforms';
 
 /**
  * Host-shareable layout for WGSL `FlowParams` (see flow_flux.wgsl).
- * Offsets: mu..hMin @ 0..28, dt @ 32, pad0 @ 36, width @ 40, height @ 44; size 48.
+ * Offsets: mu..hMin @ 0..28, dt @ 32, jacobiOmega @ 36, width @ 40, height @ 44; size 48.
+ * `jacobiOmega` is the damped-Jacobi factor (explicit kernels do not read it).
  */
 export const FLOW_PARAMS_FIELDS: readonly UniformField[] = [
   { name: 'mu', type: 'f32' },
@@ -15,7 +17,7 @@ export const FLOW_PARAMS_FIELDS: readonly UniformField[] = [
   { name: 'gPerp', type: 'f32' },
   { name: 'hMin', type: 'f32' },
   { name: 'dt', type: 'f32' },
-  { name: 'pad0', type: 'f32' },
+  { name: 'jacobiOmega', type: 'f32' },
   { name: 'width', type: 'u32' },
   { name: 'height', type: 'u32' },
 ] as const;
@@ -30,7 +32,7 @@ export type FlowParamsValues = {
   gPerp: number;
   hMin: number;
   dt: number;
-  pad0: number;
+  jacobiOmega: number;
   width: number;
   height: number;
 };
@@ -51,7 +53,7 @@ export function flowParamsFromThinFilm(
     gPerp: params.gPerp,
     hMin: params.hMin,
     dt,
-    pad0: 0,
+    jacobiOmega: SEMI_IMPLICIT_JACOBI_OMEGA,
     width,
     height,
   };
@@ -68,7 +70,7 @@ export function flowParamsUniformRecord(values: FlowParamsValues): Record<string
     gPerp: values.gPerp,
     hMin: values.hMin,
     dt: values.dt,
-    pad0: values.pad0,
+    jacobiOmega: values.jacobiOmega,
     width: values.width,
     height: values.height,
   };

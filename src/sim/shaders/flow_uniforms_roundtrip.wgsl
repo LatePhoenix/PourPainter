@@ -12,7 +12,7 @@ struct FlowParams {
   gPerp: f32,
   hMin: f32,
   dt: f32,
-  pad0: f32,
+  jacobiOmega: f32,
   width: u32,
   height: u32,
 }
@@ -31,7 +31,7 @@ fn main() {
   outWords[6] = params.gPerp;
   outWords[7] = params.hMin;
   outWords[8] = params.dt;
-  outWords[9] = params.pad0;
+  outWords[9] = params.jacobiOmega;
   outWords[10] = bitcast<f32>(params.width);
   outWords[11] = bitcast<f32>(params.height);
 }

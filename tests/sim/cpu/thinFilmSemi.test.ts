@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_CELL_SIZE_MM } from '../../../src/domain/physics';
 import {
   addGaussianPuddle,
   capillaryDiagonal,
@@ -11,6 +12,7 @@ import {
   maxAbsDiff,
   maxStableDt,
   maxStableDtSemiImplicit,
+  SEMI_IMPLICIT_JACOBI_OMEGA,
   setCell,
   thinFilmStep,
   thinFilmStepSemiImplicit,
@@ -18,6 +20,7 @@ import {
   totalFilmVolumeMm3,
   type ThinFilmParams,
 } from '../../../src/sim/cpu';
+import { createRng } from '../../../src/sim/rng';
 
 function params(overrides: Partial<ThinFilmParams> = {}): ThinFilmParams {
   return { ...DEFAULT_THIN_FILM_PARAMS, dx: 1, dtSafety: 1, ...overrides };
@@ -136,4 +139,125 @@ describe('thinFilmStepSemiImplicit', () => {
     expect(prev).toBeLessThan(0.02);
     expect(hasNonFinite(state.height)).toBe(false);
   });
+
+  it('uses a Jacobi weight inside the constant-M convergence bound', () => {
+    expect(SEMI_IMPLICIT_JACOBI_OMEGA).toBeGreaterThan(0);
+    expect(SEMI_IMPLICIT_JACOBI_OMEGA).toBeLessThan(2 / 3.2);
+  });
+
+  it('damps 20% seeded noise at 200× and 1000× the capillary limit', () => {
+    const n = 32;
+    const p = params({
+      dx: DEFAULT_CELL_SIZE_MM,
+      gPerp: 0,
+      gParallelX: 0,
+      gParallelY: 0,
+      sigma: DEFAULT_THIN_FILM_PARAMS.sigma,
+      mu: DEFAULT_THIN_FILM_PARAMS.mu,
+      dtSafety: 1,
+    });
+    for (const factor of [200, 1000]) {
+      const state = createThinFilmState(n, n, 1);
+      const rng = createRng(20261121);
+      for (let y = 0; y < n; y += 1) {
+        for (let x = 0; x < n; x += 1) {
+          setCell(state.height, x, y, 1 + 0.2 * (2 * rng.next() - 1));
+        }
+      }
+      const std0 = stddev(state.height.data);
+      const peak0 = peakOf(state.height.data);
+      const dt = factor * explicitCapillaryDt(state.height, p);
+      for (let step = 0; step < 60; step += 1) {
+        thinFilmSubstepSemiImplicit(state, dt, p);
+      }
+      expect(hasNonFinite(state.height)).toBe(false);
+      expect(stddev(state.height.data)).toBeLessThan(std0);
+      expect(peakOf(state.height.data)).toBeLessThanOrEqual(peak0);
+    }
+  }, 60_000);
+
+  it('has no odd/even ripple against the explicit solver at dtSafety 1', () => {
+    const n = 64;
+    const p = { ...DEFAULT_THIN_FILM_PARAMS, dtSafety: 1 };
+    const explicitState = createThinFilmState(n, n);
+    addGaussianPuddle(explicitState.height, n / 2 + 0.5, n / 2 + 0.5, 1.2, 5);
+    const semiState = cloneThinFilmState(explicitState);
+    thinFilmStep(explicitState, 0.5, p);
+    thinFilmStepSemiImplicit(semiState, 0.5, p);
+    expect(hasNonFinite(semiState.height)).toBe(false);
+    const roughExplicit = roughness(explicitState.height.data, n, n);
+    const roughSemi = roughness(semiState.height.data, n, n);
+    expect(Math.abs(roughSemi - roughExplicit) / roughExplicit).toBeLessThan(0.1);
+    expect(interiorRowMaxima(semiState.height.data, n, n / 2)).toBe(1);
+  }, 60_000);
+
+  it('stays within 1% of explicit at 64× with default physics', () => {
+    const n = 64;
+    const p = { ...DEFAULT_THIN_FILM_PARAMS, dx: DEFAULT_CELL_SIZE_MM };
+    const explicitState = createThinFilmState(n, n);
+    addGaussianPuddle(explicitState.height, n / 2 + 0.5, n / 2 + 0.5, 1.2, 5);
+    const semiState = cloneThinFilmState(explicitState);
+    const dtSemi = 64 * explicitCapillaryDt(explicitState.height, p);
+    const steps = Math.max(1, Math.round(0.25 / dtSemi));
+    const simTime = steps * dtSemi;
+    thinFilmStep(explicitState, simTime, p);
+    for (let i = 0; i < steps; i += 1) {
+      thinFilmSubstepSemiImplicit(semiState, dtSemi, p);
+    }
+    expect(hasNonFinite(semiState.height)).toBe(false);
+    const diff = maxAbsDiff(explicitState.height, semiState.height);
+    let peak = 0;
+    for (let i = 0; i < explicitState.height.data.length; i += 1) {
+      peak = Math.max(peak, explicitState.height.data[i]!);
+    }
+    expect(diff / peak).toBeLessThan(0.01);
+  }, 120_000);
 });
+
+function stddev(data: ArrayLike<number>): number {
+  let mean = 0;
+  for (let i = 0; i < data.length; i += 1) mean += data[i]!;
+  mean /= data.length;
+  let v = 0;
+  for (let i = 0; i < data.length; i += 1) {
+    const d = data[i]! - mean;
+    v += d * d;
+  }
+  return Math.sqrt(v / data.length);
+}
+
+function peakOf(data: ArrayLike<number>): number {
+  let peak = -Infinity;
+  for (let i = 0; i < data.length; i += 1) {
+    if (data[i]! > peak) peak = data[i]!;
+  }
+  return peak;
+}
+
+function roughness(data: ArrayLike<number>, w: number, h: number): number {
+  let sum = 0;
+  let count = 0;
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const c = data[y * w + x]!;
+      const avg =
+        (data[y * w + x - 1]! +
+          data[y * w + x + 1]! +
+          data[(y - 1) * w + x]! +
+          data[(y + 1) * w + x]!) /
+        4;
+      sum += Math.abs(c - avg);
+      count += 1;
+    }
+  }
+  return sum / count;
+}
+
+function interiorRowMaxima(data: ArrayLike<number>, w: number, y: number): number {
+  let count = 0;
+  for (let x = 1; x < w - 1; x += 1) {
+    const c = data[y * w + x]!;
+    if (c > data[y * w + x - 1]! && c > data[y * w + x + 1]!) count += 1;
+  }
+  return count;
+}
