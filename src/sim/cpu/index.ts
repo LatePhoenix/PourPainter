@@ -15,6 +15,7 @@ export {
 } from './grid';
 export type { ThinFilmParams, ThinFilmState } from './thinFilm';
 export {
+  addBoxPuddle,
   addGaussianPuddle,
   cloneThinFilmState,
   createThinFilmState,

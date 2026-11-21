@@ -1,5 +1,7 @@
 /**
- * Dense Float32 grid for CPU reference solvers and invariant tests.
+ * Dense Float64 grid for CPU reference solvers and invariant tests.
+ * Float64 (not Float32) so long explicit thin-film runs can conserve volume to
+ * ~1e-6 relative; GPU compare paths cast/read back separately.
  * Layout is row-major: index = y * width + x, with (0,0) at the top-left of the
  * array (texture / y-down). Physics that uses canvas y-up converts at the boundary.
  */
@@ -8,7 +10,7 @@ export type Grid2D = {
   readonly width: number;
   readonly height: number;
   /** Row-major length width * height. */
-  readonly data: Float32Array;
+  readonly data: Float64Array;
 };
 
 export type MirrorAxis = 'x' | 'y';
@@ -16,7 +18,7 @@ export type MirrorAxis = 'x' | 'y';
 export function createGrid2D(width: number, height: number, fill = 0): Grid2D {
   assertPositiveInt(width, 'width');
   assertPositiveInt(height, 'height');
-  const data = new Float32Array(width * height);
+  const data = new Float64Array(width * height);
   if (fill !== 0) {
     data.fill(fill);
   }
@@ -73,7 +75,7 @@ export function copyGrid(grid: Grid2D): Grid2D {
   return {
     width: grid.width,
     height: grid.height,
-    data: new Float32Array(grid.data),
+    data: new Float64Array(grid.data),
   };
 }
 

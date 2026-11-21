@@ -155,7 +155,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 **Milestone done when:** you can pour a puddle of a single color, tilt the canvas, and it flows and runs off the edge looking like glossy liquid.
 
 ### M1-01 CPU thin-film solver
-- **Status:** todo ([audit: changes requested](audits/2026-11-21-M1-01.md)). Continue on the existing branch `task/M1-01-cpu-thin-film`.
+- **Status:** review ([audit: changes requested](audits/2026-11-21-M1-01.md) addressed on `task/M1-01-cpu-thin-film`).
 - **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
@@ -165,16 +165,16 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [x] Automatic stable `dt` (advective + h³ diffusion limits), with substeps
   - [x] Edge cells drain: outflow past the border is removed and counted in `drainedVolume`
   - [x] Tests: volume conserved (total + drained) to 1e-4 relative over 500 steps; no NaNs; a centered puddle on a flat canvas stays symmetric; with tilt, the center of mass moves downhill
-  - [ ] _(audit round 1, finding 1)_ Replace the `h<0 → 0` clamp with a **positivity-preserving flux limiter**: scale each cell's outgoing face fluxes so outflow × dt ≤ the cell's volume, consistently for both cells sharing a face, and apply drain accounting to the limited fluxes. Keep a debug assert `h ≥ −1e-6`. Test: a sharp 8×8 box of 1.5 mm with default params, run 1.0 s; relative volume error (on canvas + drained) < 1e-6.
-  - [ ] _(audit round 1, finding 2)_ **Upwind** the in-plane gravity term: on each face, mobility for the `ρ·g∥` part uses `h` from the upwind cell (by the sign of g∥ on that face). Pressure terms keep the centered face mobility. Test: the existing tilt config, after 0.2 s; the center row has no interior local minimum deeper than 1e-3 between two higher values (no sawtooth).
-  - [ ] _(audit round 1, finding 3)_ Stability bounds from analysis: capillary `Δ⁴/(32·M·σ)`, hydrostatic `Δ²/(4·M·ρ·g⊥)`, advective wave speed `h²·ρ·|g∥|/μ`. Document `dtSafety ∈ (0,1]`. Test: a uniform 1 mm film + ±1% checkerboard, capillary only (g⊥ = g∥ = 0), `dtSafety = 0.9`, 200 substeps; the checkerboard amplitude decreases monotonically.
-  - [ ] _(audit round 1, finding 4)_ Fix the `gravityFromTilt` doc comment (tiltX > 0 means the canvas top tips down, so flow goes toward the canvas top = grid −y), and add a test pinning the sign of g∥ for ±tiltX and ±tiltY.
+  - [x] _(audit round 1, finding 1)_ Replace the `h<0 → 0` clamp with a **positivity-preserving flux limiter**: scale each cell's outgoing face fluxes so outflow × dt ≤ the cell's volume, consistently for both cells sharing a face, and apply drain accounting to the limited fluxes. Keep a debug assert `h ≥ −1e-6`. Test: a sharp 8×8 box of 1.5 mm with default params, run 1.0 s; relative volume error (on canvas + drained) < 1e-6.
+  - [x] _(audit round 1, finding 2)_ **Upwind** the in-plane gravity term: on each face, mobility for the `ρ·g∥` part uses `h` from the upwind cell (by the sign of g∥ on that face). Pressure terms keep the centered face mobility. Test: the existing tilt config, after 0.2 s; the center row has no interior local minimum deeper than 1e-3 between two higher values (no sawtooth).
+  - [x] _(audit round 1, finding 3)_ Stability bounds from analysis: capillary `Δ⁴/(32·M·σ)`, hydrostatic `Δ²/(4·M·ρ·g⊥)`, advective wave speed `h²·ρ·|g∥|/μ`. Document `dtSafety ∈ (0,1]`. Test: a uniform 1 mm film + ±1% checkerboard, capillary only (g⊥ = g∥ = 0), `dtSafety = 0.9`, 200 substeps; the checkerboard amplitude decreases monotonically.
+  - [x] _(audit round 1, finding 4)_ Fix the `gravityFromTilt` doc comment (tiltX > 0 means the canvas top tips down, so flow goes toward the canvas top = grid −y), and add a test pinning the sign of g∥ for ±tiltX and ±tiltY.
 - **Handoff notes:**
-  - Grid fixes first: `maxAbsDiff` NaN-aware; `isMirrorSymmetric` false on non-finite pairs; `getCell`/`setCell` throw on non-integer indices (tests added).
-  - `src/sim/cpu/thinFilm.ts`: file-header derivation in mm–g–s + explicit Δt limits (capillary Δ⁴, hydrostatic Δ², advective CFL); FV face fluxes; open-edge drain → `drainedVolume`; `thinFilmStep` auto-substeps via `maxStableDt`.
-  - `gravityFromTilt` maps canvas tilt (y-up) into grid g∥ (y-down) + g⊥.
-  - Tests: 500-step volume conservation (rel < 1e-4), flat-canvas mirror symmetry, CoM shifts +x under +g∥ (tilt case uses σ=g⊥=0 to isolate drive).
-  - `npm run check` passes (70 tests). No new dependencies.
+  - Audit round 1 fixes on `task/M1-01-cpu-thin-film`: donor flux limiter (α) + assert `h ≥ −1e-6`; upwind mobility for `ρ·g∥`; capillary dt `Δ⁴/(32 M σ)`, wave speed `h² ρ |g∥| / μ`, `dtSafety ∈ (0,1]`; `gravityFromTilt` comment + sign tests.
+  - Needed for 1e-6 box conservation: `Grid2D.data` is now **Float64** (Float32 quantization over ~10⁴ substeps was ~2.5e-5 relative gain). GPU compare paths still cast/read f32 separately.
+  - Open edges: Neumann ghosts for pressure/laplacian (no capillary cliff vs `p_ext=0`); exterior faces carry gravity drain only, inward exterior flux zeroed. Fixes checkerboard blow-up at `dtSafety=0.9`.
+  - New tests: sharp box 1.0 s rel err < 1e-6; tilt sawtooth local-min probe; capillary checkerboard monotonic decay; tilt sign pins.
+  - `npm run check` passes. No new dependencies. ADR 0003 / M1-06 still pending user OK (audit finding 5).
 
 ### M1-02 GPU thin-film flow
 - **Status:** todo
@@ -234,3 +234,4 @@ Defaults assumed until the user decides: desktop first, a realistic-but-sped-up 
 _Implementers: add work found mid-task here (one line each). Don't do it in the current task._
 - _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
 - _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
+- _(M1-01 audit fix)_ M0-05 specified `Grid2D` as Float32 for GPU parity; M1-01 needed Float64 for 1e-6 conservation on long explicit runs. Confirm in M1-02 whether CPU↔GPU compares should quantize the CPU field to f32 before diffing.
