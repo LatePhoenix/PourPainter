@@ -50,6 +50,10 @@ export default tseslint.config(
           ],
           patterns: [
             {
+              group: ['react', 'react/*', 'react-dom', 'react-dom/*'],
+              message: 'src/sim, src/domain and src/render must not import React.',
+            },
+            {
               group: ['**/app', '**/app/*', '@/app', '@/app/*', 'src/app', 'src/app/*'],
               message: 'src/sim, src/domain and src/render must not import from src/app.',
             },

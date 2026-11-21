@@ -23,7 +23,7 @@ Starter prompt for Claude Code:
 > Audit all tasks in `review`.
 
 ## Requirements
-- Node.js 20+ and Git (see `.nvmrc`)
+- Node.js 22+ and Git (`.nvmrc` pins 24 LTS)
 - Chrome or Edge (WebGPU)
 
 ## Commands
