@@ -240,6 +240,18 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - Throughput, nvidia, 512², semi, 20 sweeps: thick film **60 fps, 19 substeps/frame, sim/wall 1.00e+0 s/s**; after it spreads **60 fps, 18 substeps/frame, sim/wall 1.00e+0 s/s**.
   - `npm run check` ~48 s wall, vitest 43.7 s, semi file 43.3 s (pour-spike 28.2 s, still the explicit reference), 90 tests. Timeouts unchanged (60 / 120 / 180 s). No new dependencies. Explicit solver unchanged.
 
+### M1-06c Make heavy semi-implicit tests CI-safe
+- **Status:** todo
+- **Depends on:** M1-06b
+- **Goal:** Stop the flaky CI failure found after merging M1-06b. On GitHub runners all 90 tests pass, but the run fails with `Vitest caught 1 unhandled error … [vitest-worker]: Timeout calling "onTaskUpdate"`. Long synchronous tests block the worker's event loop. On CI, `thinFilmSemi.test.ts` took 72.7 s, including "matches explicit on a pour spike, including a dry corner" at **45.2 s** and "stays within 1% of explicit at 64× with default physics" at **23.2 s**. (Run #43 on main @ a2dc65d.)
+- **Acceptance criteria:**
+  - [ ] Cut the cost of the two heavy tests **without weakening what they check**. The expensive part is the explicit reference solve. Options: run it on a smaller grid (e.g. 48² with the same dx and the same spike geometry scaled), or for a shorter sim time where the semi-implicit/explicit gap is still meaningful, or precompute the explicit reference once into a checked-in fixture (`tests/fixtures/*.json`, with a script to regenerate it and a note on which commit it was made from). The assertions stay the same (rel L∞ < 1%, the corner within 1e-6 of explicit, the 64× factor, default physics).
+  - [ ] No single test runs longer than **5 s locally**, and the whole `thinFilmSemi.test.ts` file takes ≤ 10 s locally. Record the before/after times in the handoff notes.
+  - [ ] As a second line of defense, any test loop expected to run > 1 s yields to the event loop periodically (e.g. `await new Promise(setImmediate)` every N substeps), so the worker can always answer RPCs.
+  - [ ] Bump `actions/checkout` and `actions/setup-node` to v5 in `.github/workflows/check.yml` (clears the Node 20 deprecation warning; listed under Discovered since M1-01).
+  - [ ] GitHub Actions passes **three runs in a row** on the branch (push, then use "Re-run jobs" twice, or push two trivial commits). Note the run numbers in the handoff notes.
+- **Handoff notes:**
+
 ### M1-03 Tilt control
 - **Status:** todo
 - **Depends on:** M1-02
@@ -289,7 +301,7 @@ Defaults assumed until the user decides: desktop first, a realistic-but-sped-up 
 _Implementers: add work found mid-task here (one line each). Don't do it in the current task._
 - _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
 - _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
-- _(M1-01 audit r2)_ Bump `actions/checkout` and `actions/setup-node` to v5 in `.github/workflows/check.yml` (v4 targets the deprecated Node 20 runtime).
+- ~~_(M1-01 audit r2)_ Bump `actions/checkout` and `actions/setup-node` to v5~~ → scheduled in M1-06c.
 - _(M1-02 audit, finding 5)_ GPU `flow_update.wgsl`: count `hNew < −1e-6` events in a debug atomic, and show it in the overlay (it should always be 0, as a tripwire for the flux limiter).
 - _(M1-02 audit r2)_ Guard `ThinFilmGpu.encodeSubsteps` against being called twice on the same `GPUCommandEncoder` (it would overwrite the uniform ring and silently bring back the mixed-dt bug). Throw, or document it loudly.
 - _(M1-01 audit fix, resolved in M1-02)_ CPU↔GPU compares quantize the CPU `Grid2D` (Float64) to f32 before `maxAbsDiff`.
