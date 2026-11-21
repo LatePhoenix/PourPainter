@@ -8,8 +8,10 @@ The thin-film equation's capillary term is fourth order, so an explicit step nee
 
 | Grid | Δ (mm) | Stable Δt | Substeps per 60 Hz frame |
 |---|---|---|---|
-| 512² | 0.59 | 3.3e-5 s | ≈ 525 |
-| 1024² | 0.29 | 2.1e-6 s | ≈ 8,000 |
+| 512² | 0.59 | ≈ 8e-6 s | ≈ 2,100 |
+| 1024² | 0.29 | ≈ 5e-7 s | ≈ 32,000 |
+
+_(Updated after M1-01 round 2, which corrected the capillary bound from Δ⁴/8Mσ to Δ⁴/32Mσ. The round-1 figures were ≈ 525 and ≈ 8,000 substeps.)_
 
 The number of steps needed to simulate a given amount of flow scales as `σ·L/(ρ·g·Δ⁴)`, independent of viscosity, so changing μ doesn't help. The product goal is real time or faster ("realistic but sped up"), at 512² or above.
 

@@ -13,3 +13,17 @@ export {
   setCell,
   totalVolume,
 } from './grid';
+export type { ThinFilmParams, ThinFilmState } from './thinFilm';
+export {
+  addBoxPuddle,
+  addGaussianPuddle,
+  cloneThinFilmState,
+  createThinFilmState,
+  DEFAULT_THIN_FILM_PARAMS,
+  gravityFromTilt,
+  heightCenterOfMass,
+  maxStableDt,
+  thinFilmStep,
+  thinFilmSubstep,
+  totalFilmVolumeMm3,
+} from './thinFilm';

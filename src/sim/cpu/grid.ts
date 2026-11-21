@@ -1,5 +1,7 @@
 /**
- * Dense Float32 grid for CPU reference solvers and invariant tests.
+ * Dense Float64 grid for CPU reference solvers and invariant tests.
+ * Float64 (not Float32) so long explicit thin-film runs can conserve volume to
+ * ~1e-6 relative; GPU compare paths cast/read back separately.
  * Layout is row-major: index = y * width + x, with (0,0) at the top-left of the
  * array (texture / y-down). Physics that uses canvas y-up converts at the boundary.
  */
@@ -8,7 +10,7 @@ export type Grid2D = {
   readonly width: number;
   readonly height: number;
   /** Row-major length width * height. */
-  readonly data: Float32Array;
+  readonly data: Float64Array;
 };
 
 export type MirrorAxis = 'x' | 'y';
@@ -16,7 +18,7 @@ export type MirrorAxis = 'x' | 'y';
 export function createGrid2D(width: number, height: number, fill = 0): Grid2D {
   assertPositiveInt(width, 'width');
   assertPositiveInt(height, 'height');
-  const data = new Float32Array(width * height);
+  const data = new Float64Array(width * height);
   if (fill !== 0) {
     data.fill(fill);
   }
@@ -38,10 +40,18 @@ export function inBounds(grid: Grid2D, x: number, y: number): boolean {
   );
 }
 
+function assertIntegerIndex(x: number, y: number): void {
+  if (!Number.isInteger(x) || !Number.isInteger(y)) {
+    throw new RangeError(`Grid indices must be integers (got ${x}, ${y})`);
+  }
+}
+
 /**
- * Read a cell. Out-of-bounds samples return 0 (exterior is empty — no wrap).
+ * Read a cell. Out-of-bounds integer samples return 0 (exterior is empty — no wrap).
+ * Non-integer indices throw `RangeError`.
  */
 export function getCell(grid: Grid2D, x: number, y: number): number {
+  assertIntegerIndex(x, y);
   if (!inBounds(grid, x, y)) {
     return 0;
   }
@@ -49,9 +59,11 @@ export function getCell(grid: Grid2D, x: number, y: number): number {
 }
 
 /**
- * Write a cell. Out-of-bounds writes are ignored (no wrap, no throw).
+ * Write a cell. Out-of-bounds integer writes are ignored (no wrap, no throw).
+ * Non-integer indices throw `RangeError`.
  */
 export function setCell(grid: Grid2D, x: number, y: number, value: number): void {
+  assertIntegerIndex(x, y);
   if (!inBounds(grid, x, y)) {
     return;
   }
@@ -63,7 +75,7 @@ export function copyGrid(grid: Grid2D): Grid2D {
   return {
     width: grid.width,
     height: grid.height,
-    data: new Float32Array(grid.data),
+    data: new Float64Array(grid.data),
   };
 }
 
@@ -92,10 +104,22 @@ export function hasNonFinite(grid: Grid2D): boolean {
   return false;
 }
 
+function sameNonFinite(a: number, b: number): boolean {
+  if (Number.isFinite(a) || Number.isFinite(b)) {
+    return false;
+  }
+  // Both NaN, or both +Inf, or both -Inf.
+  if (Number.isNaN(a) && Number.isNaN(b)) {
+    return true;
+  }
+  return a === b;
+}
+
 /**
  * Mirror symmetry check.
  * - `'x'`: left–right symmetry (value at (x,y) ≈ (width-1-x, y))
  * - `'y'`: top–bottom symmetry (value at (x,y) ≈ (x, height-1-y))
+ * Returns `false` if any compared pair includes a non-finite value.
  */
 export function isMirrorSymmetric(grid: Grid2D, axis: MirrorAxis, tol: number): boolean {
   if (!(tol >= 0) || !Number.isFinite(tol)) {
@@ -108,6 +132,9 @@ export function isMirrorSymmetric(grid: Grid2D, axis: MirrorAxis, tol: number): 
       for (let x = 0; x < mid; x += 1) {
         const a = getCell(grid, x, y);
         const b = getCell(grid, grid.width - 1 - x, y);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) {
+          return false;
+        }
         if (Math.abs(a - b) > tol) {
           return false;
         }
@@ -121,6 +148,9 @@ export function isMirrorSymmetric(grid: Grid2D, axis: MirrorAxis, tol: number): 
     for (let x = 0; x < grid.width; x += 1) {
       const a = getCell(grid, x, y);
       const b = getCell(grid, x, grid.height - 1 - y);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        return false;
+      }
       if (Math.abs(a - b) > tol) {
         return false;
       }
@@ -129,12 +159,24 @@ export function isMirrorSymmetric(grid: Grid2D, axis: MirrorAxis, tol: number): 
   return true;
 }
 
-/** Max |a − b| over all cells. Grids must match in size. */
+/**
+ * Max |a − b| over all cells. Grids must match in size.
+ * Returns `NaN` if any cell is non-finite, unless both cells at that index are
+ * the same non-finite value (both NaN, or equal ±Infinity).
+ */
 export function maxAbsDiff(a: Grid2D, b: Grid2D): number {
   assertSameShape(a, b);
   let max = 0;
   for (let i = 0; i < a.data.length; i += 1) {
-    const diff = Math.abs(a.data[i]! - b.data[i]!);
+    const av = a.data[i]!;
+    const bv = b.data[i]!;
+    if (!Number.isFinite(av) || !Number.isFinite(bv)) {
+      if (sameNonFinite(av, bv)) {
+        continue;
+      }
+      return Number.NaN;
+    }
+    const diff = Math.abs(av - bv);
     if (diff > max) {
       max = diff;
     }

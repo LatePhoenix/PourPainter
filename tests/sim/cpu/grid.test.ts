@@ -38,6 +38,12 @@ describe('createGrid2D / getCell / setCell', () => {
     expect(totalVolume(grid)).toBe(4);
   });
 
+  it('throws on non-integer indices', () => {
+    const grid = createGrid2D(2, 2);
+    expect(() => getCell(grid, 1.5, 1)).toThrow(RangeError);
+    expect(() => setCell(grid, 1, 0.2, 1)).toThrow(RangeError);
+  });
+
   it('rejects non-positive dimensions', () => {
     expect(() => createGrid2D(0, 2)).toThrow(RangeError);
     expect(() => createGrid2D(2, -1)).toThrow(RangeError);
@@ -108,6 +114,12 @@ describe('isMirrorSymmetric', () => {
     setCell(grid, 1, 0, 8);
     expect(isMirrorSymmetric(grid, 'y', 1e-6)).toBe(false);
   });
+
+  it('returns false when a compared pair is non-finite', () => {
+    const grid = createGrid2D(4, 1, 1);
+    setCell(grid, 0, 0, Number.NaN);
+    expect(isMirrorSymmetric(grid, 'x', 1e-6)).toBe(false);
+  });
 });
 
 describe('maxAbsDiff', () => {
@@ -117,5 +129,22 @@ describe('maxAbsDiff', () => {
     expect(maxAbsDiff(a, b)).toBe(0);
     setCell(b, 1, 1, 4);
     expect(maxAbsDiff(a, b)).toBe(3);
+  });
+
+  it('returns NaN when a cell is non-finite unless both match', () => {
+    const a = createGrid2D(2, 1, 1);
+    const b = copyGrid(a);
+    setCell(b, 0, 0, Number.NaN);
+    expect(Number.isNaN(maxAbsDiff(a, b))).toBe(true);
+
+    setCell(a, 0, 0, Number.NaN);
+    expect(maxAbsDiff(a, b)).toBe(0);
+
+    setCell(a, 0, 0, Number.POSITIVE_INFINITY);
+    setCell(b, 0, 0, Number.POSITIVE_INFINITY);
+    expect(maxAbsDiff(a, b)).toBe(0);
+
+    setCell(b, 0, 0, Number.NEGATIVE_INFINITY);
+    expect(Number.isNaN(maxAbsDiff(a, b))).toBe(true);
   });
 });
