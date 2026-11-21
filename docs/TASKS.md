@@ -177,7 +177,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes. No new dependencies. ADR 0003 / M1-06 still pending user OK (audit finding 5).
 
 ### M1-02 GPU thin-film flow
-- **Status:** review
+- **Status:** todo ([audit: changes requested](audits/2026-11-21-M1-02.md)). Continue on the existing branch `task/M1-02-gpu-thin-film`.
 - **Depends on:** M0-04, M1-01
 - **Goal:** Port M1-01 to WGSL compute passes.
 - **Acceptance criteria:**
@@ -186,6 +186,9 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [x] _(changed per ADR 0003)_ Report throughput instead of requiring 60 fps: the debug overlay shows substeps per frame and **sim-seconds per wall-second** at 512² with default paint params. Record the numbers and the GPU model in the handoff notes. Explicit substeps are capped per frame, so the UI stays responsive (the sim runs slower than real time instead of freezing).
   - [x] _(from M0-04 audit)_ Ping-pong bind groups are built once (A→B and B→A) and chosen by parity. No `createBindGroup` in the per-frame or per-substep path.
   - [x] _(from M0-04 audit)_ Uniform layout round-trip check: a tiny compute pass copies every field of the flow-parameter uniform struct into a storage buffer, it's read back, and it's compared with `packUniforms` input. Runs from the same debug-overlay harness as "Compare to CPU".
+  - [ ] _(audit round 1, finding 1)_ **Per-substep uniforms:** a uniform ring with `MAX_SUBSTEPS_PER_FRAME` slots (256-byte aligned), written in one `writeBuffer` per frame and bound with dynamic offsets. Each substep reads its own `dt`. Remove the per-substep `writeBuffer`.
+  - [ ] _(audit round 1, finding 2)_ "Compare to CPU" also runs (a) a **mixed-dt** sequence (e.g. 50 × dt then 50 × dt/10) through the real frame-encoding path, in one encoder, and (b) a **tilted** case (`gravityFromTilt(0, 0.3)`, puddle 8 cells from the +x edge, 400 substeps), comparing height (< 1e-3 relative) and drained volume (< 1e-3 relative). The overlay shows all three results.
+  - [ ] _(audit round 1, finding 3)_ `hMaxHint` comes from a GPU max-reduction of `h`, read back asynchronously at most every ~10 frames, with a 10% margin. CPU-side height writes still raise it immediately. Record the before/after throughput at 512² in the handoff notes.
 - **Handoff notes:**
   - Exact M1-01 port in WGSL: `flow_flux.wgsl` + `flow_update.wgsl` (centered pressure mobility, upwind g∥, Neumann exterior pressure, gravity-only edge drain, donor α limiter). Params via `FlowParams` uniforms (`flowParams.ts`).
   - `createThinFilmGpu`: height ping-pong; flux/update/blit bind groups built once (A/B parity); `MAX_SUBSTEPS_PER_FRAME = 64`. Controller replaces the blur demo with the thin-film loop; debug overlay (`): Compare to CPU, Uniform round-trip, substeps/frame, sim/wall.
@@ -223,6 +226,8 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] Pointer down/drag adds film height with a Gaussian footprint, using a flow rate (ml/s) and stream radius from a small tool panel
   - [ ] The cup has a finite volume; pouring stops when it's empty, and the UI shows how much is left
   - [ ] Added volume is accounted for in stats (poured = on canvas + drained)
+  - [ ] _(from M1-02 audit, finding 4)_ Replace the `atomic<u32>` micro-mm³ drain counter (it wraps at ≈ 4.3 ml and truncates every add) with per-border-face `f32` accumulators, one slot per border face, owned by one thread. Sum them in float64 on the CPU at sync, then clear. Sync at least once a second, and on demand for stats. Test: tilted drain of > 10 ml matches the CPU reference within 1e-3 relative.
+  - [ ] _(from M1-02 audit, finding 3)_ Pour deposits raise `hMaxHint` immediately (by at least the deposited peak), so the timestep stays stable while pouring
 - **Handoff notes:**
 
 ### M1-05 Lit film rendering
@@ -254,4 +259,5 @@ _Implementers: add work found mid-task here (one line each). Don't do it in the 
 - _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
 - _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
 - _(M1-01 audit r2)_ Bump `actions/checkout` and `actions/setup-node` to v5 in `.github/workflows/check.yml` (v4 targets the deprecated Node 20 runtime).
+- _(M1-02 audit, finding 5)_ GPU `flow_update.wgsl`: count `hNew < −1e-6` events in a debug atomic, and show it in the overlay (it should always be 0, as a tripwire for the flux limiter).
 - _(M1-01 audit fix, resolved in M1-02)_ CPU↔GPU compares quantize the CPU `Grid2D` (Float64) to f32 before `maxAbsDiff`.
