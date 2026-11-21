@@ -134,14 +134,19 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` (53 tests) and `npm run build` pass. No new dependencies.
 
 ### M0-05 CPU reference grid utilities
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M0-02
 - **Goal:** The base for the CPU reference solvers and physics tests.
 - **Acceptance criteria:**
-  - [ ] `src/sim/cpu/grid.ts`: a `Grid2D` Float32 grid with get/set, bounds handling and copy
-  - [ ] Invariant helpers: `totalVolume`, `hasNonFinite`, `isMirrorSymmetric(axis, tol)`, `maxAbsDiff(a, b)`
-  - [ ] Tests for each helper
+  - [x] `src/sim/cpu/grid.ts`: a `Grid2D` Float32 grid with get/set, bounds handling and copy
+  - [x] Invariant helpers: `totalVolume`, `hasNonFinite`, `isMirrorSymmetric(axis, tol)`, `maxAbsDiff(a, b)`
+  - [x] Tests for each helper
 - **Handoff notes:**
+  - `Grid2D`: row-major Float32, `getCell`/`setCell` with OOB get→0 and OOB set ignored (no wrap). `copyGrid` / `copyGridInto`.
+  - Helpers: `totalVolume(cellArea?)`, `hasNonFinite`, `isMirrorSymmetric('x'|'y', tol)`, `maxAbsDiff`.
+  - Tests in `tests/sim/cpu/grid.test.ts` cover create/get/set/bounds, copy, and each invariant helper (11 cases).
+  - Exported from `src/sim/cpu` and `src/sim`. No new dependencies. `npm run check` passes (64 tests).
+  - Note: array (0,0) is top-left / y-down (texture space); canvas y-up conversion stays at the coords boundary for M1.
 
 ---
 
