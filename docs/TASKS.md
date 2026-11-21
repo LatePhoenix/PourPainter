@@ -155,17 +155,22 @@ Only the current and next milestone are fully specified. Later ones get filled i
 **Milestone done when:** you can pour a puddle of a single color, tilt the canvas, and it flows and runs off the edge looking like glossy liquid.
 
 ### M1-01 CPU thin-film solver
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
-  - [ ] _(from M0-05 audit, do first)_ `maxAbsDiff` returns `NaN` when any compared cell is non-finite, unless both cells are identical non-finite values. `isMirrorSymmetric` returns `false` when a compared pair has a non-finite value. Add tests for both.
-  - [ ] _(from M0-05 audit)_ `getCell`/`setCell` throw `RangeError` on non-integer indices (out-of-bounds integers keep their current behavior)
-  - [ ] Explicit finite-volume step for `∂h/∂t = -∇·q`, `q = -(h³/3μ)(∇p − ρ·g∥)`, where `p = ρ·g⊥·h − σ∇²h` and `g∥`/`g⊥` are the in-plane and normal parts of gravity for the current tilt (document the derivation in a comment, following PLAN §2.2)
-  - [ ] Automatic stable `dt` (advective + h³ diffusion limits), with substeps
-  - [ ] Edge cells drain: outflow past the border is removed and counted in `drainedVolume`
-  - [ ] Tests: volume conserved (total + drained) to 1e-4 relative over 500 steps; no NaNs; a centered puddle on a flat canvas stays symmetric; with tilt, the center of mass moves downhill
+  - [x] _(from M0-05 audit, do first)_ `maxAbsDiff` returns `NaN` when any compared cell is non-finite, unless both cells are identical non-finite values. `isMirrorSymmetric` returns `false` when a compared pair has a non-finite value. Add tests for both.
+  - [x] _(from M0-05 audit)_ `getCell`/`setCell` throw `RangeError` on non-integer indices (out-of-bounds integers keep their current behavior)
+  - [x] Explicit finite-volume step for `∂h/∂t = -∇·q`, `q = -(h³/3μ)(∇p − ρ·g∥)`, where `p = ρ·g⊥·h − σ∇²h` and `g∥`/`g⊥` are the in-plane and normal parts of gravity for the current tilt (document the derivation in a comment, following PLAN §2.2)
+  - [x] Automatic stable `dt` (advective + h³ diffusion limits), with substeps
+  - [x] Edge cells drain: outflow past the border is removed and counted in `drainedVolume`
+  - [x] Tests: volume conserved (total + drained) to 1e-4 relative over 500 steps; no NaNs; a centered puddle on a flat canvas stays symmetric; with tilt, the center of mass moves downhill
 - **Handoff notes:**
+  - Grid fixes first: `maxAbsDiff` NaN-aware; `isMirrorSymmetric` false on non-finite pairs; `getCell`/`setCell` throw on non-integer indices (tests added).
+  - `src/sim/cpu/thinFilm.ts`: file-header derivation in mm–g–s + explicit Δt limits (capillary Δ⁴, hydrostatic Δ², advective CFL); FV face fluxes; open-edge drain → `drainedVolume`; `thinFilmStep` auto-substeps via `maxStableDt`.
+  - `gravityFromTilt` maps canvas tilt (y-up) into grid g∥ (y-down) + g⊥.
+  - Tests: 500-step volume conservation (rel < 1e-4), flat-canvas mirror symmetry, CoM shifts +x under +g∥ (tilt case uses σ=g⊥=0 to isolate drive).
+  - `npm run check` passes (70 tests). No new dependencies.
 
 ### M1-02 GPU thin-film flow
 - **Status:** todo
