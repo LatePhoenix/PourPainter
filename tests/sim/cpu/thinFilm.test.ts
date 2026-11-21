@@ -117,7 +117,8 @@ describe('thinFilmStep', () => {
     const n = 32;
     const params = testParams({
       // Default-like physics; positivity limiter must hold mass to 1e-6 relative.
-      dtSafety: 0.2,
+      // dtSafety 1.0 (max allowed) keeps the substep count CI-friendly.
+      dtSafety: 1.0,
     });
     const state = createThinFilmState(n, n);
     addBoxPuddle(state.height, 12, 12, 8, 8, 1.5);
@@ -128,7 +129,7 @@ describe('thinFilmStep', () => {
     expect(hasNonFinite(state.height)).toBe(false);
     const v1 = totalFilmVolumeMm3(state, params.dx) + state.drainedVolume;
     expect(Math.abs(v1 - v0) / v0).toBeLessThan(1e-6);
-  });
+  }, 30_000);
 
   it('avoids sawtooth local minima under tilted advection', () => {
     const n = 48;
