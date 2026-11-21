@@ -1,5 +1,12 @@
 import { isValidSeed } from '../domain/seed';
 import { canvasToTexel, pointerToCanvas, type CanvasPoint } from './coords';
+import {
+  createBlurDemo,
+  encodeBlitPass,
+  encodeBlurPass,
+  resetBlurDemoPattern,
+  type BlurDemoResources,
+} from './gpu/demoBlur';
 import { requestGpuDevice, type GpuInitError } from './gpu/device';
 import { createRng } from './rng';
 import type {
@@ -11,7 +18,7 @@ import type {
   SimTool,
 } from './types';
 
-/** Acrylic canvas white in linear-ish sRGB for the clear color. */
+/** Acrylic canvas white as sRGB values for non-sRGB `*8unorm` swapchain clears. */
 const CANVAS_WHITE = { r: 0.96, g: 0.94, b: 0.9, a: 1 };
 
 export class SimControllerError extends Error {
@@ -51,6 +58,8 @@ class SimControllerImpl implements SimController {
   private fpsLastTs = 0;
   private resizeObserver: ResizeObserver | null = null;
   private disposed = false;
+  private contextConfigured = false;
+  private demo: BlurDemoResources | null = null;
 
   async init(canvas: HTMLCanvasElement, settings: SimSettings): Promise<void> {
     if (this.disposed) {
@@ -64,6 +73,12 @@ class SimControllerImpl implements SimController {
     }
 
     const result = await requestGpuDevice();
+    if (this.disposed) {
+      if (result.ok) {
+        result.value.device.destroy();
+      }
+      return;
+    }
     if (!result.ok) {
       throw new SimControllerError(result.error.message, result.error);
     }
@@ -83,6 +98,7 @@ class SimControllerImpl implements SimController {
     this.seed = settings.seed;
     this.gridSize = settings.gridSize ?? 512;
     createRng(this.seed);
+    this.demo = createBlurDemo(device, format, this.gridSize);
 
     this.configureContext();
     this.attachResize();
@@ -122,6 +138,9 @@ class SimControllerImpl implements SimController {
     this.lastPointer = null;
     this.lastTool = null;
     this.lastTexel = null;
+    if (this.device && this.demo) {
+      resetBlurDemoPattern(this.device, this.demo);
+    }
   }
 
   step(n: number): void {
@@ -129,8 +148,16 @@ class SimControllerImpl implements SimController {
     if (!Number.isFinite(n) || n < 0) {
       throw new SimControllerError('step count must be a non-negative finite number');
     }
-    // Physics arrives in M1; count steps so UI/stats stay meaningful.
-    this.stepCount += Math.floor(n);
+    const count = Math.floor(n);
+    if (count === 0 || !this.device || !this.demo || this.deviceLost) {
+      return;
+    }
+    const encoder = this.device.createCommandEncoder({ label: 'manual-steps' });
+    for (let i = 0; i < count; i += 1) {
+      encodeBlurPass(encoder, this.demo, this.device);
+    }
+    this.device.queue.submit([encoder.finish()]);
+    this.stepCount += count;
   }
 
   setTilt(x: number, y: number): void {
@@ -172,11 +199,14 @@ class SimControllerImpl implements SimController {
     this.pause();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.demo?.destroy();
+    this.demo = null;
     this.device?.destroy();
     this.device = null;
     this.context = null;
     this.format = null;
     this.canvas = null;
+    this.contextConfigured = false;
     this.disposed = true;
   }
 
@@ -184,11 +214,12 @@ class SimControllerImpl implements SimController {
     if (this.disposed) {
       throw new SimControllerError('Controller was disposed');
     }
-    if (!this.canvas || !this.device || !this.context || !this.format) {
+    if (!this.canvas || !this.device || !this.context || !this.format || !this.demo) {
       throw new SimControllerError('Controller is not initialized');
     }
   }
 
+  /** Configure the swapchain only at init and when the canvas pixel size changes. */
   private configureContext(): void {
     if (!this.canvas || !this.device || !this.context || !this.format) {
       return;
@@ -196,15 +227,18 @@ class SimControllerImpl implements SimController {
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const width = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
     const height = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
+    const sizeChanged = this.canvas.width !== width || this.canvas.height !== height;
+    if (!sizeChanged && this.contextConfigured) {
+      return;
     }
+    this.canvas.width = width;
+    this.canvas.height = height;
     this.context.configure({
       device: this.device,
       format: this.format,
       alphaMode: 'opaque',
     });
+    this.contextConfigured = true;
   }
 
   private attachResize(): void {
@@ -233,25 +267,17 @@ class SimControllerImpl implements SimController {
 
   private frame(timestamp: number): void {
     this.rafId = null;
-    if (!this.running || this.deviceLost || !this.device || !this.context) {
+    if (!this.running || this.deviceLost || !this.device || !this.context || !this.demo) {
       this.running = false;
       return;
     }
 
-    this.configureContext();
-    const texture = this.context.getCurrentTexture();
-    const encoder = this.device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: texture.createView(),
-          clearValue: CANVAS_WHITE,
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
-    pass.end();
+    const encoder = this.device.createCommandEncoder({ label: 'frame' });
+    encodeBlurPass(encoder, this.demo, this.device);
+    this.stepCount += 1;
+
+    const swapView = this.context.getCurrentTexture().createView();
+    encodeBlitPass(encoder, this.demo, this.device, swapView, CANVAS_WHITE);
     this.device.queue.submit([encoder.finish()]);
 
     this.frameCount += 1;

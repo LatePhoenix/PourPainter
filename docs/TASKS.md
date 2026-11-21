@@ -114,18 +114,24 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` (49 tests) and `npm run build` pass. WebGPU path needs Chrome/Edge to visually verify.
 
 ### M0-04 Ping-pong compute framework + debug readback
-- **Status:** todo
+- **Status:** done ([audit](audits/2026-11-21-M0-04.md))
 - **Depends on:** M0-03
 - **Goal:** Reusable plumbing for grid compute passes.
 - **Acceptance criteria:**
-  - [ ] Helper for a named ping-pong pair of storage textures or buffers at grid resolution N×N (N configurable: 256/512/1024)
-  - [ ] Helper to build a compute pipeline from a WGSL file plus a typed uniform struct
-  - [ ] Async readback helper (GPU → `Float32Array`) for debugging and comparisons
-  - [ ] Demo pass: a compute shader that blurs a test pattern each frame, plus a render pass that shows the grid as a grayscale image
-  - [ ] A dev-only debug overlay (toggle with backtick) that shows FPS, grid size and step count
-  - [ ] _(from M0-03 audit)_ `context.configure()` runs only at init and when the canvas pixel size actually changes, never every frame
-  - [ ] _(from M0-03 audit)_ `SimController.init` rechecks `disposed` after awaiting the device, and if disposed, destroys the device and returns without touching the canvas
+  - [x] Helper for a named ping-pong pair of storage textures or buffers at grid resolution N×N (N configurable: 256/512/1024)
+  - [x] Helper to build a compute pipeline from a WGSL file plus a typed uniform struct
+  - [x] Async readback helper (GPU → `Float32Array`) for debugging and comparisons
+  - [x] Demo pass: a compute shader that blurs a test pattern each frame, plus a render pass that shows the grid as a grayscale image
+  - [x] A dev-only debug overlay (toggle with backtick) that shows FPS, grid size and step count
+  - [x] _(from M0-03 audit)_ `context.configure()` runs only at init and when the canvas pixel size actually changes, never every frame
+  - [x] _(from M0-03 audit)_ `SimController.init` rechecks `disposed` after awaiting the device, and if disposed, destroys the device and returns without touching the canvas
 - **Handoff notes:**
+  - GPU plumbing: `pingPong.ts` (`heightA`/`heightB` r32float), `uniforms.ts` (`packUniforms` / `createComputePipelineFromWgsl` / `createUniformBuffer`), `readback.ts` (`readTextureToFloat32`, `readBufferToFloat32`, 256-byte row align).
+  - Demo: `blur.wgsl` 3×3 box blur + `blit_grayscale.wgsl`; `demoBlur.ts` seeds a disk/checker pattern; controller runs blur+blit each frame; `step(n)` runs N blurs immediately.
+  - Dev overlay in `App.tsx` (`import.meta.env.DEV`): backtick toggles FPS / grid / step count.
+  - M0-03 fixes: `configureContext` only on init/size change (no per-frame configure); `init` destroys device and returns if `disposed` after await.
+  - Unit tests: uniform packing, row alignment, test pattern. Full GPU path needs Chrome/Edge (not exercised in Vitest).
+  - `npm run check` (53 tests) and `npm run build` pass. No new dependencies.
 
 ### M0-05 CPU reference grid utilities
 - **Status:** todo
@@ -162,6 +168,8 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] Flux pass + height-update pass (ping-pong), with parameters from uniforms
   - [ ] Debug-overlay button "Compare to CPU": runs 100 steps on a 64×64 grid on both and shows the max abs difference (target < 1e-3 relative)
   - [ ] 512×512 runs at ≥ 60 fps with substeps on a mid-range GPU (note the GPU used in the handoff notes)
+  - [ ] _(from M0-04 audit)_ Ping-pong bind groups are built once (A→B and B→A) and chosen by parity. No `createBindGroup` in the per-frame or per-substep path.
+  - [ ] _(from M0-04 audit)_ Uniform layout round-trip check: a tiny compute pass copies every field of the flow-parameter uniform struct into a storage buffer, it's read back, and it's compared with `packUniforms` input. Runs from the same debug-overlay harness as "Compare to CPU".
 - **Handoff notes:**
 
 ### M1-03 Tilt control
@@ -189,6 +197,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] Normals from the `h` gradient; a Blinn-Phong or GGX specular "wet gloss" look with a fixed studio light
   - [ ] Paint color × slight thickness darkening; bare canvas shows a subtle weave texture
   - [ ] A toggle between the "height debug" view and the "lit" view
+  - [ ] _(from M0-04 audit)_ Aspect-correct display: the square sim grid is letterboxed (or the grid matches the canvas aspect), so circles stay circles at any window shape. Pointer mapping stays consistent with the letterbox.
 - **Handoff notes:**
 
 ---
@@ -208,3 +217,4 @@ Defaults assumed until the user decides: desktop first, a realistic-but-sped-up 
 ## Discovered
 _Implementers: add work found mid-task here (one line each). Don't do it in the current task._
 - _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
+- _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
