@@ -35,7 +35,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - No plan deviations. Next tasks (M0-02 / M0-03) can start once this is audited.
 
 ### M0-01b Tooling follow-ups from M0-01 audit
-- **Status:** review
+- **Status:** done ([audit](audits/2026-11-21-M0-01b.md))
 - **Depends on:** M0-01
 - **Goal:** Close the small gaps found in [the M0-01 audit](audits/2026-11-21-M0-01.md).
 - **Acceptance criteria:**
@@ -61,6 +61,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] `src/domain/physics.ts`: every physical constant and default (gravity, base viscosity, surface tension, silicone σ reduction, drying rate) with units in comments
   - [ ] `src/sim/rng.ts`: a seeded PRNG (e.g. mulberry32 or PCG); test that the same seed gives the same sequence
   - [ ] Unit tests for recipe round-trip
+  - [ ] _(from M0-01b audit)_ Add a `format:check` script (`prettier --check .`), include it in `check`, and run `npm run format` once so the repo is clean
 - **Handoff notes:**
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
