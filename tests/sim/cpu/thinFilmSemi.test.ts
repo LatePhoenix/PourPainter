@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { setImmediate } from 'node:timers';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CELL_SIZE_MM } from '../../../src/domain/physics';
 import {
@@ -5,6 +9,7 @@ import {
   capillaryDiagonal,
   capillaryDivergence,
   cloneThinFilmState,
+  createGrid2D,
   createThinFilmState,
   DEFAULT_THIN_FILM_PARAMS,
   explicitCapillaryDt,
@@ -207,54 +212,98 @@ describe('thinFilmStepSemiImplicit', () => {
     expect(interiorRowMaxima(semiState.height.data, n, n / 2)).toBe(1);
   }, 60_000);
 
-  it('stays within 1% of explicit at 64× with default physics', () => {
+  it('stays within 1% of explicit at 64× with default physics', async () => {
+    const fixture = loadExplicitFixture('semi-explicit-64x.json');
     const n = 64;
     const p = { ...DEFAULT_THIN_FILM_PARAMS, dx: DEFAULT_CELL_SIZE_MM };
+    expect(fixture.n).toBe(n);
+    expect(fixture.dx).toBe(p.dx);
     const explicitState = createThinFilmState(n, n);
     addGaussianPuddle(explicitState.height, n / 2 + 0.5, n / 2 + 0.5, 1.2, 5);
     const semiState = cloneThinFilmState(explicitState);
     const dtSemi = 64 * explicitCapillaryDt(explicitState.height, p);
     const steps = Math.max(1, Math.round(0.25 / dtSemi));
     const simTime = steps * dtSemi;
-    thinFilmStep(explicitState, simTime, p);
+    expect(steps).toBe(fixture.steps);
+    expect(simTime).toBe(fixture.simTime);
     for (let i = 0; i < steps; i += 1) {
       thinFilmSubstepSemiImplicit(semiState, dtSemi, p);
+      await yieldEvery(i + 1);
     }
     expect(hasNonFinite(semiState.height)).toBe(false);
-    const diff = maxAbsDiff(explicitState.height, semiState.height);
+    const reference = explicitGrid(fixture);
+    const diff = maxAbsDiff(reference, semiState.height);
     let peak = 0;
-    for (let i = 0; i < explicitState.height.data.length; i += 1) {
-      peak = Math.max(peak, explicitState.height.data[i]!);
+    for (let i = 0; i < reference.data.length; i += 1) {
+      peak = Math.max(peak, reference.data[i]!);
     }
     expect(diff / peak).toBeLessThan(0.01);
   }, 120_000);
 
-  it('matches explicit on a pour spike, including a dry corner', () => {
+  it('matches explicit on a pour spike, including a dry corner', async () => {
+    const fixture = loadExplicitFixture('semi-explicit-pour-spike.json');
     const n = 64;
     const p = { ...DEFAULT_THIN_FILM_PARAMS, dx: DEFAULT_CELL_SIZE_MM };
-    const explicitState = createThinFilmState(n, n);
-    addGaussianPuddle(explicitState.height, n / 2, n / 2, 1, 8);
-    addGaussianPuddle(explicitState.height, n / 2 + 6, n / 2, 3, 1.5);
-    const semiState = cloneThinFilmState(explicitState);
+    expect(fixture.n).toBe(n);
+    expect(fixture.dx).toBe(p.dx);
+    const semiState = createThinFilmState(n, n);
+    addGaussianPuddle(semiState.height, n / 2, n / 2, 1, 8);
+    addGaussianPuddle(semiState.height, n / 2 + 6, n / 2, 3, 1.5);
 
     let simTime = 0;
+    let steps = 0;
     while (simTime < 0.25) {
       const dt = Math.min(64 * explicitCapillaryDt(semiState.height, p), 0.25 - simTime);
       thinFilmSubstepSemiImplicit(semiState, dt, p);
       simTime += dt;
+      steps += 1;
+      await yieldEvery(steps);
     }
-    thinFilmStep(explicitState, simTime, p);
+    expect(steps).toBe(fixture.steps);
+    expect(simTime).toBe(fixture.simTime);
 
     expect(hasNonFinite(semiState.height)).toBe(false);
-    const diff = maxAbsDiff(explicitState.height, semiState.height);
+    const reference = explicitGrid(fixture);
+    const diff = maxAbsDiff(reference, semiState.height);
     let peak = 0;
-    for (let i = 0; i < explicitState.height.data.length; i += 1) {
-      peak = Math.max(peak, explicitState.height.data[i]!);
+    for (let i = 0; i < reference.data.length; i += 1) {
+      peak = Math.max(peak, reference.data[i]!);
     }
     expect(diff / peak).toBeLessThan(0.01);
-    expect(Math.abs(semiState.height.data[0]! - explicitState.height.data[0]!)).toBeLessThan(1e-6);
+    expect(Math.abs(semiState.height.data[0]! - reference.data[0]!)).toBeLessThan(1e-6);
   }, 180_000);
 });
+
+/** Let the Vitest worker answer onTaskUpdate during a long synchronous solve. */
+const YIELD_EVERY_STEPS = 8;
+
+async function yieldEvery(step: number): Promise<void> {
+  if (step % YIELD_EVERY_STEPS === 0) {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  }
+}
+
+type ExplicitFixture = {
+  sourceCommit: string;
+  n: number;
+  dx: number;
+  steps: number;
+  simTime: number;
+  height: number[];
+};
+
+function loadExplicitFixture(name: string): ExplicitFixture {
+  const path = join(dirname(fileURLToPath(import.meta.url)), '../../fixtures', name);
+  return JSON.parse(readFileSync(path, 'utf8')) as ExplicitFixture;
+}
+
+function explicitGrid(fixture: ExplicitFixture) {
+  const grid = createGrid2D(fixture.n, fixture.n);
+  grid.data.set(fixture.height);
+  return grid;
+}
 
 function stddev(data: ArrayLike<number>): number {
   let mean = 0;
