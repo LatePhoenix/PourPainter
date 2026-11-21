@@ -1,0 +1,11 @@
+---
+description: React UI conventions
+globs: src/app/**,src/state/**
+alwaysApply: false
+---
+
+- Function components and hooks only. App state lives in Zustand stores under `src/state/`, one store per concern (paints, cup, tools, sim).
+- The UI controls the simulation only through `SimController` (from `src/sim`). Never touch GPU objects from components.
+- Don't re-render React every sim frame. The canvas is driven by a requestAnimationFrame loop owned by the sim, and React reads stats at a low rate.
+- Pointer tools (pour, torch, air, swipe, string) send input events to the SimController in canvas coordinates (0..1).
+- Plain CSS modules. No UI kit for now.

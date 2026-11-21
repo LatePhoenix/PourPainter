@@ -1,0 +1,14 @@
+---
+description: Rules for simulation, physics and GPU code
+globs: src/sim/**,src/domain/**,src/render/**
+alwaysApply: false
+---
+
+- No imports from React or `src/app` in these folders.
+- The model is a 2.5D thin film (lubrication approximation) on a grid. See docs/PLAN.md section 2 before changing equations.
+- Units: mm, s, Pa·s, N/m. Document units on every physical parameter in `src/domain/physics.ts`.
+- Each physics compute pass has a matching CPU function in `src/sim/cpu/` and a Vitest test. At minimum, test: total paint volume is conserved (except for edge drain), no NaN/Inf after N steps, and a symmetric initial state stays symmetric.
+- Color/layer advection must be low-diffusion (BFECC or MacCormack with limiter). Never use plain semi-Lagrangian alone for color.
+- Clamp timesteps for stability (CFL plus the h³ diffusion limit). Use substeps instead of hoping.
+- Randomness only through the seeded RNG in `src/sim/rng.ts`. Pass seeds to the GPU as uniforms.
+- Use ping-pong textures/buffers with explicit names (`heightA/heightB`). Don't read and write the same resource in one pass.

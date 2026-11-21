@@ -1,0 +1,11 @@
+---
+description: WGSL shader conventions
+globs: src/**/*.wgsl
+alwaysApply: false
+---
+
+- One entry point per file unless the passes are tightly coupled. Name the file after the pass: `flow_flux.wgsl`, `advect_bfecc.wgsl`.
+- Every tunable value comes in through a uniform struct that mirrors a TypeScript type. Keep the struct layout notes (alignment) in a comment above it.
+- Workgroup size 8×8 for 2D grid passes unless measured otherwise.
+- Comment the equation each kernel implements, in plain math, at the top of the file.
+- Guard grid bounds explicitly. Edge cells drain off-canvas (paint lost), they don't wrap.

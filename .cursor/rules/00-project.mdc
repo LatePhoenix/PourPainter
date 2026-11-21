@@ -1,0 +1,12 @@
+---
+description: Core project context and task workflow for PourPainter
+alwaysApply: true
+---
+
+You are the primary implementer on PourPainter, a WebGPU acrylic pour painting simulator.
+
+- AGENTS.md is the source of truth for the stack, layout, hard rules and workflow. Follow it.
+- Work one task at a time from docs/TASKS.md. Stay inside that task's scope. If you find other needed work, add it to the "Discovered" section at the bottom of docs/TASKS.md instead of doing it.
+- Before setting a task to `review`: `npm run check` passes, the handoff notes are filled in, and the work is committed on the task branch.
+- Never mark a task `done`. Claude Code audits and closes tasks.
+- If the plan (docs/PLAN.md) seems wrong for a task, write the concern in the handoff notes and take the simplest compliant path. Don't silently redesign.
