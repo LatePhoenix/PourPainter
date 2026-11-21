@@ -9,7 +9,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 ## M0: Foundations
 
 ### M0-01 Project scaffold
-- **Status:** review
+- **Status:** done ([audit](audits/2026-11-21-M0-01.md))
 - **Depends on:** none
 - **Goal:** A working Vite + React + TypeScript project with the tooling every later task relies on.
 - **Acceptance criteria:**
@@ -33,6 +33,17 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - **Dependency note:** added `zustand` early (listed in AGENTS.md / PLAN stack) even though no store is wired yet; added `@types/node` for Vite/Vitest path resolution.
   - `npm run check` and `npm run build` pass locally (Node 26 host; engines/CI pin ≥20).
   - No plan deviations. Next tasks (M0-02 / M0-03) can start once this is audited.
+
+### M0-01b Tooling follow-ups from M0-01 audit
+- **Status:** todo
+- **Depends on:** M0-01
+- **Goal:** Close the small gaps found in [the M0-01 audit](audits/2026-11-21-M0-01.md).
+- **Acceptance criteria:**
+  - [ ] `no-restricted-imports` also blocks `react/*` and `react-dom/*` subpaths (e.g. `react-dom/client`) in sim/domain/render. Add a test or a documented probe showing it.
+  - [ ] `.nvmrc` → `24`, `engines.node` → `>=22`, `@types/node` major matches the `.nvmrc` major
+  - [ ] Remove `vitest/globals` from `tsconfig.vitest.json` (tests keep explicit imports)
+  - [ ] `npm run check` passes
+- **Handoff notes:**
 
 ### M0-02 Domain types, physics constants, seeded RNG
 - **Status:** todo
