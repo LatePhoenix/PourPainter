@@ -1,5 +1,6 @@
 import type { Cup } from './cup';
 import type { Paint } from './paint';
+import { isValidSeed } from './seed';
 
 export const RECIPE_VERSION = 1 as const;
 
@@ -26,7 +27,13 @@ export type TechniqueId =
   | (string & {});
 
 /**
- * Timed tool events for replay. Coordinates are canvas-normalized [0,1] unless noted.
+ * Timed tool events for replay.
+ *
+ * Spatial coordinates are canvas-normalized with (0,0) at the bottom-left of the
+ * canvas rectangle and (1,1) at the top-right. Values **may fall outside [0,1]**
+ * (tools can start or stroke off-canvas); the sim clamps or ignores out-of-bounds
+ * samples rather than rejecting the recipe.
+ *
  * Extend with new `type` variants; keep old ones for forward-compatible JSON.
  */
 export type ToolAction =
@@ -43,7 +50,7 @@ export type Recipe = {
   paints: readonly Paint[];
   cup: Cup;
   techniqueId: TechniqueId;
-  /** Seed for the sim RNG; same recipe + seed → identical replay. */
+  /** Seed for the sim RNG; integer in [0, 2³²). Same recipe + seed → identical replay. */
   seed: number;
   actions: readonly ToolAction[];
 };
@@ -198,6 +205,72 @@ function parseAction(value: unknown, index: number): ToolAction {
   }
 }
 
+/**
+ * Semantic checks after structural parse. Throws `RecipeParseError` on the first failure.
+ */
+export function validateRecipe(recipe: Recipe): void {
+  if (!isValidSeed(recipe.seed)) {
+    throw new RecipeParseError('Recipe seed must be an integer in [0, 2^32)');
+  }
+
+  if (!(recipe.canvas.widthMm > 0) || !(recipe.canvas.heightMm > 0)) {
+    throw new RecipeParseError('Recipe canvas width and height must be > 0');
+  }
+
+  const paintIds = new Set<string>();
+  for (const [index, paint] of recipe.paints.entries()) {
+    if (paint.id.length === 0) {
+      throw new RecipeParseError(`Recipe paints[${index}].id must be non-empty`);
+    }
+    if (paintIds.has(paint.id)) {
+      throw new RecipeParseError(`Recipe paints has duplicate id "${paint.id}"`);
+    }
+    paintIds.add(paint.id);
+
+    if (!(paint.density > 0)) {
+      throw new RecipeParseError(`Recipe paints[${index}].density must be > 0`);
+    }
+    for (let channel = 0; channel < 3; channel += 1) {
+      const value = paint.rgb[channel];
+      if (value === undefined || value < 0 || value > 1) {
+        throw new RecipeParseError(`Recipe paints[${index}].rgb[${channel}] must be in [0, 1]`);
+      }
+    }
+    if (paint.mediumRatio < 0 || paint.waterRatio < 0 || paint.siliconeDrops < 0) {
+      throw new RecipeParseError(
+        `Recipe paints[${index}] mediumRatio, waterRatio and siliconeDrops must be >= 0`,
+      );
+    }
+  }
+
+  for (const [index, layer] of recipe.cup.layers.entries()) {
+    if (!paintIds.has(layer.paintId)) {
+      throw new RecipeParseError(
+        `Recipe cup.layers[${index}].paintId "${layer.paintId}" is not in paints`,
+      );
+    }
+    if (!(layer.volumeMl > 0)) {
+      throw new RecipeParseError(`Recipe cup.layers[${index}].volumeMl must be > 0`);
+    }
+  }
+
+  let previousT = Number.NEGATIVE_INFINITY;
+  for (const [index, action] of recipe.actions.entries()) {
+    if (!(action.t >= 0) || action.t < previousT) {
+      throw new RecipeParseError(
+        `Recipe actions[${index}].t must be >= 0 and non-descending (got ${action.t})`,
+      );
+    }
+    previousT = action.t;
+
+    if (action.type === 'pour' && !paintIds.has(action.paintId)) {
+      throw new RecipeParseError(
+        `Recipe actions[${index}].paintId "${action.paintId}" is not in paints`,
+      );
+    }
+  }
+}
+
 export function parseRecipe(json: string): Recipe {
   let raw: unknown;
   try {
@@ -228,7 +301,7 @@ export function parseRecipe(json: string): Recipe {
     throw new RecipeParseError('Recipe techniqueId must be a non-empty string');
   }
 
-  return {
+  const recipe: Recipe = {
     version: RECIPE_VERSION,
     canvas: {
       widthMm: assertFiniteNumber(raw.canvas.widthMm, 'canvas.widthMm'),
@@ -241,4 +314,7 @@ export function parseRecipe(json: string): Recipe {
     seed: assertFiniteNumber(raw.seed, 'seed'),
     actions: raw.actions.map(parseAction),
   };
+
+  validateRecipe(recipe);
+  return recipe;
 }

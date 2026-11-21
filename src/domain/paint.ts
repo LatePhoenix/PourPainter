@@ -1,15 +1,20 @@
-/** RGB in linear 0–1 (display conversion happens in the render pass). */
+/**
+ * Color channels in **sRGB 0–1** (matches pickers / CSS).
+ * Convert with `srgbToLinear` before lighting math in the render pass.
+ */
 export type Rgb = readonly [number, number, number];
 
 /**
  * A mixed paint ready for the cup / pour tools.
  * Densities are relative acrylic-pigment values (g/ml), not pure pigment SG.
+ * Sim code must use `densityToSim(density)` (g/mm³), never raw g/ml.
  */
 export type Paint = {
   id: string;
   name: string;
+  /** sRGB 0–1. */
   rgb: Rgb;
-  /** Pigment/binder density, g/ml. */
+  /** Pigment/binder density, g/ml (human-facing). */
   density: number;
   /** Parts pouring medium per 1 part paint (by volume). */
   mediumRatio: number;
