@@ -64,6 +64,10 @@ class SimControllerImpl implements SimController {
   private gpuDeviceName: string | null = null;
   private compareRelative: number | null = null;
   private compareMaxAbs: number | null = null;
+  private compareLevelRel: number | null = null;
+  private compareMixedRel: number | null = null;
+  private compareTiltRel: number | null = null;
+  private compareTiltDrainRel: number | null = null;
   private uniformRoundTripOk: boolean | null = null;
   private simSecondsPerWallSecond = 0;
   private lastFrameTs: number | null = null;
@@ -219,6 +223,10 @@ class SimControllerImpl implements SimController {
       gpuDeviceName: this.gpuDeviceName,
       compareRelative: this.compareRelative,
       compareMaxAbs: this.compareMaxAbs,
+      compareLevelRel: this.compareLevelRel,
+      compareMixedRel: this.compareMixedRel,
+      compareTiltRel: this.compareTiltRel,
+      compareTiltDrainRel: this.compareTiltDrainRel,
       uniformRoundTripOk: this.uniformRoundTripOk,
     };
   }
@@ -231,6 +239,10 @@ class SimControllerImpl implements SimController {
     const result = await this.film.compareToCpu(steps);
     this.compareRelative = result.relative;
     this.compareMaxAbs = result.maxAbsDiff;
+    this.compareLevelRel = result.level.relative;
+    this.compareMixedRel = result.mixedDt.relative;
+    this.compareTiltRel = result.tilted.relative;
+    this.compareTiltDrainRel = result.tilted.drainRelative;
     return result;
   }
 
@@ -332,6 +344,7 @@ class SimControllerImpl implements SimController {
 
     const encoder = this.device.createCommandEncoder({ label: 'frame' });
     const { substeps, simDt } = this.film.encodeFrame(encoder, FRAME_SIM_DT);
+    this.film.maybeScheduleHMaxReadback(encoder);
     this.stepCount += substeps;
 
     const swapView = this.context.getCurrentTexture().createView();

@@ -177,7 +177,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes. No new dependencies. ADR 0003 / M1-06 still pending user OK (audit finding 5).
 
 ### M1-02 GPU thin-film flow
-- **Status:** todo ([audit: changes requested](audits/2026-11-21-M1-02.md)). Continue on the existing branch `task/M1-02-gpu-thin-film`.
+- **Status:** review ([audit: changes requested](audits/2026-11-21-M1-02.md) addressed on `task/M1-02-gpu-thin-film`).
 - **Depends on:** M0-04, M1-01
 - **Goal:** Port M1-01 to WGSL compute passes.
 - **Acceptance criteria:**
@@ -186,15 +186,15 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [x] _(changed per ADR 0003)_ Report throughput instead of requiring 60 fps: the debug overlay shows substeps per frame and **sim-seconds per wall-second** at 512² with default paint params. Record the numbers and the GPU model in the handoff notes. Explicit substeps are capped per frame, so the UI stays responsive (the sim runs slower than real time instead of freezing).
   - [x] _(from M0-04 audit)_ Ping-pong bind groups are built once (A→B and B→A) and chosen by parity. No `createBindGroup` in the per-frame or per-substep path.
   - [x] _(from M0-04 audit)_ Uniform layout round-trip check: a tiny compute pass copies every field of the flow-parameter uniform struct into a storage buffer, it's read back, and it's compared with `packUniforms` input. Runs from the same debug-overlay harness as "Compare to CPU".
-  - [ ] _(audit round 1, finding 1)_ **Per-substep uniforms:** a uniform ring with `MAX_SUBSTEPS_PER_FRAME` slots (256-byte aligned), written in one `writeBuffer` per frame and bound with dynamic offsets. Each substep reads its own `dt`. Remove the per-substep `writeBuffer`.
-  - [ ] _(audit round 1, finding 2)_ "Compare to CPU" also runs (a) a **mixed-dt** sequence (e.g. 50 × dt then 50 × dt/10) through the real frame-encoding path, in one encoder, and (b) a **tilted** case (`gravityFromTilt(0, 0.3)`, puddle 8 cells from the +x edge, 400 substeps), comparing height (< 1e-3 relative) and drained volume (< 1e-3 relative). The overlay shows all three results.
-  - [ ] _(audit round 1, finding 3)_ `hMaxHint` comes from a GPU max-reduction of `h`, read back asynchronously at most every ~10 frames, with a 10% margin. CPU-side height writes still raise it immediately. Record the before/after throughput at 512² in the handoff notes.
+  - [x] _(audit round 1, finding 1)_ **Per-substep uniforms:** a uniform ring with `MAX_SUBSTEPS_PER_FRAME` slots (256-byte aligned), written in one `writeBuffer` per frame and bound with dynamic offsets. Each substep reads its own `dt`. Remove the per-substep `writeBuffer`.
+  - [x] _(audit round 1, finding 2)_ "Compare to CPU" also runs (a) a **mixed-dt** sequence (e.g. 50 × dt then 50 × dt/10) through the real frame-encoding path, in one encoder, and (b) a **tilted** case (`gravityFromTilt(0, 0.3)`, puddle 8 cells from the +x edge, 400 substeps), comparing height (< 1e-3 relative) and drained volume (< 1e-3 relative). The overlay shows all three results.
+  - [x] _(audit round 1, finding 3)_ `hMaxHint` comes from a GPU max-reduction of `h`, read back asynchronously at most every ~10 frames, with a 10% margin. CPU-side height writes still raise it immediately. Record the before/after throughput at 512² in the handoff notes.
 - **Handoff notes:**
-  - Exact M1-01 port in WGSL: `flow_flux.wgsl` + `flow_update.wgsl` (centered pressure mobility, upwind g∥, Neumann exterior pressure, gravity-only edge drain, donor α limiter). Params via `FlowParams` uniforms (`flowParams.ts`).
-  - `createThinFilmGpu`: height ping-pong; flux/update/blit bind groups built once (A/B parity); `MAX_SUBSTEPS_PER_FRAME = 64`. Controller replaces the blur demo with the thin-film loop; debug overlay (`): Compare to CPU, Uniform round-trip, substeps/frame, sim/wall.
-  - CPU↔GPU compare quantizes the CPU field to f32 before `maxAbsDiff` (closes the M1-01 Discovered note).
-  - Verified in Chrome: **GPU vendor nvidia**; 512² default params → **64 substeps/frame**, **~1.21e-2 sim-s / wall-s**, UI 60 fps; Compare to CPU (100×64²) **rel Δ ≈ 1.7e-7** (≪ 1e-3); uniform round-trip **ok**.
-  - `npm run check` passes (77 tests). No new dependencies. Semi-implicit capillary remains M1-06 (ADR 0003).
+  - Audit r1: uniform **ring** (`UNIFORM_RING_SLOTS=128`, stride 256) + `hasDynamicOffset`; one `writeBuffer` per `encodeSubsteps` / frame. Frame still caps at 64 substeps.
+  - Compare harness: level (equal dt) + mixed-dt (50×dt + 50×dt/10, one encoder) + tilted (`gravityFromTilt(0,0.3)`, puddle 8 from +x, 400 steps, height + drain). Overlay shows all three. Fixed `return await` so `finally` doesn't destroy textures before readback.
+  - `flow_hmax.wgsl` atomic max-reduction; async readback every 10 frames × 1.1 margin; CPU `writeHeight` still raises hint immediately.
+  - Throughput @ 512² nvidia: **before** hMax refresh ~1.2e-2 sim-s/wall-s (pessimistic frozen hint); **after** spreading + reduction ~2.4–2.6e-2 (still 64 substeps/frame while requested frame dt isn't finished — ADR 0003 / M1-06).
+  - `npm run check` passes (78 tests). No new dependencies.
 
 ### M1-06 Semi-implicit capillary step (ADR 0003)
 - **Status:** todo

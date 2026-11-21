@@ -3,6 +3,9 @@ import { DEFAULT_THIN_FILM_PARAMS, maxStableDt } from '../../../src/sim/cpu/thin
 import { createGrid2D } from '../../../src/sim/cpu/grid';
 import {
   FLOW_PARAMS_FIELDS,
+  MAX_SUBSTEPS_PER_FRAME,
+  UNIFORM_RING_SLOTS,
+  UNIFORM_RING_STRIDE,
   flowParamsFromThinFilm,
   flowParamsUniformRecord,
   maxStableDtFromHMax,
@@ -25,5 +28,11 @@ describe('flowParams', () => {
     const params = { ...DEFAULT_THIN_FILM_PARAMS, dx: 1, dtSafety: 0.5 };
     const grid = createGrid2D(8, 8, 1.25);
     expect(maxStableDtFromHMax(1.25, params)).toBeCloseTo(maxStableDt(grid, params), 12);
+  });
+
+  it('sizes the uniform ring for dynamic offsets and mixed-dt compares', () => {
+    expect(UNIFORM_RING_STRIDE).toBe(256);
+    expect(UNIFORM_RING_SLOTS).toBeGreaterThanOrEqual(MAX_SUBSTEPS_PER_FRAME);
+    expect(UNIFORM_RING_SLOTS).toBeGreaterThanOrEqual(100);
   });
 });

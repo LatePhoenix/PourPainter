@@ -159,10 +159,18 @@ export function App() {
           <div>Substeps/frame {stats.substepsLastFrame}</div>
           <div>Sim/wall {stats.simSecondsPerWallSecond.toExponential(2)} s/s</div>
           <div className={styles.debugMuted}>{stats.gpuDeviceName ?? 'GPU?'}</div>
-          {stats.compareRelative !== null ? (
+          {stats.compareLevelRel !== null ? (
+            <div>Level rel {stats.compareLevelRel.toExponential(2)}</div>
+          ) : null}
+          {stats.compareMixedRel !== null ? (
+            <div>Mixed-dt rel {stats.compareMixedRel.toExponential(2)}</div>
+          ) : null}
+          {stats.compareTiltRel !== null ? (
             <div>
-              CPU Δ {stats.compareMaxAbs?.toExponential(2)} (rel{' '}
-              {stats.compareRelative.toExponential(2)})
+              Tilt rel {stats.compareTiltRel.toExponential(2)}
+              {stats.compareTiltDrainRel !== null
+                ? ` / drain ${stats.compareTiltDrainRel.toExponential(2)}`
+                : ''}
             </div>
           ) : null}
           {stats.uniformRoundTripOk !== null ? (

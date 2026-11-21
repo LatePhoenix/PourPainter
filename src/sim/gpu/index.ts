@@ -11,7 +11,11 @@ export type { GpuInitError, GpuInitErrorCode, GpuInitResult, GpuInitSuccess } fr
 export { requestGpuDevice } from './device';
 export {
   FLOW_PARAMS_FIELDS,
+  HMAX_READBACK_INTERVAL_FRAMES,
+  HMAX_SAFETY_MARGIN,
   MAX_SUBSTEPS_PER_FRAME,
+  UNIFORM_RING_SLOTS,
+  UNIFORM_RING_STRIDE,
   flowParamsFromThinFilm,
   flowParamsUniformRecord,
   maxStableDtFromHMax,
@@ -42,6 +46,7 @@ export {
   BLIT_HEIGHT_WGSL,
   BLUR_WGSL,
   FLOW_FLUX_WGSL,
+  FLOW_HMAX_WGSL,
   FLOW_UPDATE_WGSL,
   FLOW_UNIFORMS_ROUNDTRIP_WGSL,
   PLACEHOLDER_WGSL,

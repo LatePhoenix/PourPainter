@@ -23,7 +23,10 @@ export type { ThinFilmGpuCompareResult, ThinFilmGpuResources } from './gpu/thinF
 export { createThinFilmGpu } from './gpu/thinFilmGpu';
 export {
   FLOW_PARAMS_FIELDS,
+  HMAX_SAFETY_MARGIN,
   MAX_SUBSTEPS_PER_FRAME,
+  UNIFORM_RING_SLOTS,
+  UNIFORM_RING_STRIDE,
   flowParamsFromThinFilm,
   maxStableDtFromHMax,
 } from './gpu/flowParams';

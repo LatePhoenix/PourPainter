@@ -100,3 +100,19 @@ export function maxStableDtFromHMax(hMax: number, params: ThinFilmParams): numbe
 
 /** Cap explicit substeps per animation frame so the UI stays responsive (ADR 0003). */
 export const MAX_SUBSTEPS_PER_FRAME = 64;
+
+/**
+ * Uniform ring capacity (256-byte slots). Must be ≥ MAX_SUBSTEPS_PER_FRAME.
+ * Larger than the frame cap so compare harnesses can pack >64 mixed-dt steps
+ * into one encoder without a mid-encoder writeBuffer race.
+ */
+export const UNIFORM_RING_SLOTS = 128;
+
+/** WebGPU min dynamic uniform offset alignment. */
+export const UNIFORM_RING_STRIDE = 256;
+
+/** Async hMax reduction cadence (frames between readbacks). */
+export const HMAX_READBACK_INTERVAL_FRAMES = 10;
+
+/** Safety margin applied to GPU-measured hMax before using it for Δt. */
+export const HMAX_SAFETY_MARGIN = 1.1;
