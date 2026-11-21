@@ -174,9 +174,23 @@ Only the current and next milestone are fully specified. Later ones get filled i
 - **Acceptance criteria:**
   - [ ] Flux pass + height-update pass (ping-pong), with parameters from uniforms
   - [ ] Debug-overlay button "Compare to CPU": runs 100 steps on a 64×64 grid on both and shows the max abs difference (target < 1e-3 relative)
-  - [ ] 512×512 runs at ≥ 60 fps with substeps on a mid-range GPU (note the GPU used in the handoff notes)
+  - [ ] _(changed per ADR 0003)_ Report throughput instead of requiring 60 fps: the debug overlay shows substeps per frame and **sim-seconds per wall-second** at 512² with default paint params. Record the numbers and the GPU model in the handoff notes. Explicit substeps are capped per frame, so the UI stays responsive (the sim runs slower than real time instead of freezing).
   - [ ] _(from M0-04 audit)_ Ping-pong bind groups are built once (A→B and B→A) and chosen by parity. No `createBindGroup` in the per-frame or per-substep path.
   - [ ] _(from M0-04 audit)_ Uniform layout round-trip check: a tiny compute pass copies every field of the flow-parameter uniform struct into a storage buffer, it's read back, and it's compared with `packUniforms` input. Runs from the same debug-overlay harness as "Compare to CPU".
+- **Handoff notes:**
+
+### M1-06 Semi-implicit capillary step (ADR 0003)
+- **Status:** todo
+- **Depends on:** M1-01, M1-02
+- **Goal:** Remove the Δ⁴ capillary timestep limit, so 512² can run at real time or faster. See [ADR 0003](decisions/0003-semi-implicit-capillary.md).
+- **Acceptance criteria:**
+  - [ ] CPU reference `thinFilmStepSemiImplicit`: freeze the mobility at the step start, treat `−∇·(M∇(−σ∇²h))` implicitly, and solve with a fixed number of iterations (Jacobi or red-black Gauss–Seidel, or a split into two coupled 2nd-order solves; document which and why). Gravity and advection stay explicit, upwinded and flux-limited, as in M1-01.
+  - [ ] The step size is limited only by the hydrostatic and advective bounds (and a cap for accuracy), not by `Δ⁴/(32Mσ)`
+  - [ ] Accuracy test: on a 64² puddle, the semi-implicit result at Δt = 20× the explicit limit stays within 2% (relative L∞) of the explicit solver run at its own stable Δt for the same sim time
+  - [ ] Conservation: volume (on canvas + drained) conserved to 1e-6 relative over 1 s of sim time
+  - [ ] Stability test: the checkerboard from M1-01, at Δt = 50× the explicit capillary limit, decays without oscillating
+  - [ ] GPU port behind a toggle (explicit / semi-implicit), with "Compare to CPU" covering both modes
+  - [ ] Throughput at 512² recorded in the handoff notes. Target: ≥ 1 sim-second per wall-second with default params.
 - **Handoff notes:**
 
 ### M1-03 Tilt control
