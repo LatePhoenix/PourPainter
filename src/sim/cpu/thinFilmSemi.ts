@@ -19,17 +19,13 @@
  *
  *   h* + Δt ∇·q_cap(h*) = hⁿ − Δt ∇·q_ex
  *
- * When the flux-form height hⁿ − Δt ∇·(q_ex + q_cap(h*)) stays ≥ 0 and
- * within `SEMI_IMPLICIT_FLUX_RESIDUAL_MM` of h*, that is the update: it
- * matches a converged h*, the M1-01 donor limiter keeps it positive, and
- * volume (canvas + drained) telescopes. Exterior q_cap is 0. A larger
- * gap means the leftover residual is being multiplied by Δt a_ii
- * (hundreds, at 1000× the explicit capillary limit) even though the
- * damped sweeps themselves are contracting. The update then keeps h* —
- * which stays bounded — and adds a uniform constant so the cell sum
- * matches hⁿ minus the explicit boundary drain. Holes clipped to zero
- * are scaled back out of the positive film. The constant is invisible
- * to ∇⁴. Explicit fluxes stay upwinded.
+ * The update is always the limited flux form, the same commit as the GPU:
+ *
+ *   hⁿ⁺¹ = hⁿ − Δt ∇·(q_ex + q_cap(h*))
+ *
+ * with the M1-01 donor limiter. Exterior q_cap is 0. A converged h*
+ * matches that update, and volume (canvas + drained) telescopes.
+ * After limiting, h ≥ −1e-6.
  *
  * =====================================================================
  * Iteration: damped two-color Jacobi
@@ -68,9 +64,15 @@
  * still keeps it inside (−1, 1]. The kernel mode β = 0 stays at 1,
  * which is correct: constants are invisible to ∇⁴.
  *
- * ω = 1/2. Worst-mode factor |1 − 0.5 × 3.2| = 0.6, so
- * `SEMI_IMPLICIT_SWEEPS` = 20 pairs contract that mode by 0.6²⁰ ≈ 4×10⁻⁵,
- * at any Δt. The constant-M checkerboard is the stiffest uniform mode;
+ * ω = 1/2. Worst-mode factor |1 − 0.5 × 3.2| = 0.6 per pair.
+ * `SEMI_IMPLICIT_SWEEPS` = 70 pairs. Twenty pairs already contract the
+ * stiffest mode by 0.6²⁰ ≈ 4×10⁻⁵, but the flux-form commit multiplies
+ * the leftover by Δt a_ii. At 1000× the capillary limit that product is
+ * hundreds, and 20 pairs still leave a residual the donor limiter turns
+ * into a spike (peak 6.3 mm on the 20% noise test). 60 pairs still
+ * overshoot (peak 1.35 mm). 70 pairs keep that peak at 1.14 mm, under
+ * the 1.20 mm start. The constant-M checkerboard is the stiffest
+ * uniform mode;
  * Neumann ghosts fold off-diagonals into the diagonal, which lowers the
  * local radius. ω = 1/2 sits 0.125 under the 0.625 bound for the cases
  * where M varies from cell to cell.
@@ -85,7 +87,7 @@ import { copyGrid, createGrid2D, totalVolume, type Grid2D } from './grid';
 import { maxStableDt, type ThinFilmParams, type ThinFilmState } from './thinFilm';
 
 /** Full red+black pairs per step. Shared with the GPU port. */
-export const SEMI_IMPLICIT_SWEEPS = 20;
+export const SEMI_IMPLICIT_SWEEPS = 70;
 
 /**
  * Damping for the two-color Jacobi solve. Shared with the GPU uniform.
@@ -93,15 +95,6 @@ export const SEMI_IMPLICIT_SWEEPS = 20;
  * mode at factor 0.6.
  */
 export const SEMI_IMPLICIT_JACOBI_OMEGA = 0.5;
-
-/**
- * Height gap (mm) between the flux-form update and h* above which the
- * flux form is an explicit overshoot of the leftover residual. The 20×
- * GPU compare peaks near 0.16 mm and stays non-negative, so 0.2 mm keeps
- * that step on the telescoping update the GPU commits. At 1000× the gap
- * is O(1) mm and the step keeps h* instead.
- */
-export const SEMI_IMPLICIT_FLUX_RESIDUAL_MM = 0.2;
 
 /**
  * Accuracy cap: semi-implicit Δt ≤ this × the explicit capillary Δt.
@@ -506,75 +499,19 @@ export function thinFilmSubstepSemiImplicit(
     }
   }
 
-  // Flux form hⁿ − Δt ∇·(q_ex + q_cap(h*)). Same as h* once the residual
-  // is small. At huge Δt a leftover residual is multiplied by Δt a_ii and
-  // this height goes negative; then we keep h* instead (see below).
-  let fluxMin = Infinity;
-  let fluxResidual = 0;
-  for (let y = 0; y < gridH; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      const i = y * w + x;
-      const qxm = qx[y * (w + 1) + x]!;
-      const qxp = qx[y * (w + 1) + x + 1]!;
-      const qym = qy[y * w + x]!;
-      const qyp = qy[(y + 1) * w + x]!;
-      const divEx = (qxp - qxm) * invDx + (qyp - qym) * invDx;
-      const divC = capillaryDivergence(hStar, h0, w, gridH, x, y, params);
-      const hFlux = h0[i]! - dt * (divEx + divC);
-      if (hFlux < fluxMin) fluxMin = hFlux;
-      const gap = Math.abs(hFlux - hStar[i]!);
-      if (gap > fluxResidual) fluxResidual = gap;
-    }
-  }
-
   const dx = params.dx;
-  // Flux form and h* agree when the Jacobi residual is small. Past that,
-  // Δt times the leftover is an explicit overshoot — keep h* instead.
-  if (fluxMin >= -1e-6 && fluxResidual <= SEMI_IMPLICIT_FLUX_RESIDUAL_MM) {
-    for (let y = 0; y < gridH; y += 1) {
-      for (let x = 0; x <= w; x += 1) {
-        qx[y * (w + 1) + x]! += capFluxX(hStar, h0, w, gridH, x, y, params);
-      }
+  for (let y = 0; y < gridH; y += 1) {
+    for (let x = 0; x <= w; x += 1) {
+      qx[y * (w + 1) + x]! += capFluxX(hStar, h0, w, gridH, x, y, params);
     }
-    for (let y = 0; y <= gridH; y += 1) {
-      for (let x = 0; x < w; x += 1) {
-        qy[y * w + x]! += capFluxY(hStar, h0, w, gridH, x, y, params);
-      }
-    }
-    applyLimiter(qx, qy, h0, w, gridH, dx, dt);
-
-    let drained = 0;
-    for (let y = 0; y < gridH; y += 1) {
-      const qLeft = qx[y * (w + 1)]!;
-      const qRight = qx[y * (w + 1) + w]!;
-      drained += Math.max(0, -qLeft) * dx * dt;
-      drained += Math.max(0, qRight) * dx * dt;
-    }
-    for (let x = 0; x < w; x += 1) {
-      const qTop = qy[x]!;
-      const qBottom = qy[gridH * w + x]!;
-      drained += Math.max(0, -qTop) * dx * dt;
-      drained += Math.max(0, qBottom) * dx * dt;
-    }
-    state.drainedVolume += drained;
-
-    const next = createGrid2D(w, gridH);
-    for (let y = 0; y < gridH; y += 1) {
-      for (let x = 0; x < w; x += 1) {
-        const qxm = qx[y * (w + 1) + x]!;
-        const qxp = qx[y * (w + 1) + x + 1]!;
-        const qym = qy[y * w + x]!;
-        const qyp = qy[(y + 1) * w + x]!;
-        const div = (qxp - qxm) * invDx + (qyp - qym) * invDx;
-        const hNew = h0[y * w + x]! - dt * div;
-        next.data[y * w + x] = hNew > 0 ? hNew : 0;
-      }
-    }
-    height.data.set(next.data);
-    return;
   }
+  for (let y = 0; y <= gridH; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      qy[y * w + x]! += capFluxY(hStar, h0, w, gridH, x, y, params);
+    }
+  }
+  applyLimiter(qx, qy, h0, w, gridH, dx, dt);
 
-  // Stiff residual: keep the bounded iterate and correct only the kernel.
   let drained = 0;
   for (let y = 0; y < gridH; y += 1) {
     const qLeft = qx[y * (w + 1)]!;
@@ -590,30 +527,20 @@ export function thinFilmSubstepSemiImplicit(
   }
   state.drainedVolume += drained;
 
-  const nCells = w * gridH;
-  let sum0 = 0;
-  let sumStar = 0;
-  for (let i = 0; i < nCells; i += 1) {
-    sum0 += h0[i]!;
-    sumStar += hStar[i]!;
-  }
-  const shift = (sum0 - drained / (dx * dx) - sumStar) / nCells;
   const next = createGrid2D(w, gridH);
-  let positive = 0;
-  let clipped = 0;
-  for (let i = 0; i < nCells; i += 1) {
-    const hNew = hStar[i]! + shift;
-    if (hNew > 0) {
-      next.data[i] = hNew;
-      positive += hNew;
-    } else {
-      clipped += -hNew;
+  for (let y = 0; y < gridH; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const qxm = qx[y * (w + 1) + x]!;
+      const qxp = qx[y * (w + 1) + x + 1]!;
+      const qym = qy[y * w + x]!;
+      const qyp = qy[(y + 1) * w + x]!;
+      const div = (qxp - qxm) * invDx + (qyp - qym) * invDx;
+      const hNew = h0[y * w + x]! - dt * div;
+      if (!(hNew >= -1e-6)) {
+        throw new Error(`thinFilmSubstepSemiImplicit: height ${hNew} < -1e-6 at (${x},${y})`);
+      }
+      next.data[y * w + x] = hNew > 0 ? hNew : 0;
     }
-  }
-  // Zeroing a hole adds mass. Scale the positive film back to the target.
-  if (clipped > 0 && positive > clipped) {
-    const scale = (positive - clipped) / positive;
-    for (let i = 0; i < nCells; i += 1) next.data[i] = next.data[i]! * scale;
   }
   height.data.set(next.data);
 }

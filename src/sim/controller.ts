@@ -70,6 +70,7 @@ class SimControllerImpl implements SimController {
   private compareTiltRel: number | null = null;
   private compareTiltDrainRel: number | null = null;
   private compareSemiRel: number | null = null;
+  private compareSpikeRel: number | null = null;
   private flowMode: FlowMode = 'explicit';
   private uniformRoundTripOk: boolean | null = null;
   private simSecondsPerWallSecond = 0;
@@ -231,6 +232,7 @@ class SimControllerImpl implements SimController {
       compareTiltRel: this.compareTiltRel,
       compareTiltDrainRel: this.compareTiltDrainRel,
       compareSemiRel: this.compareSemiRel,
+      compareSpikeRel: this.compareSpikeRel,
       flowMode: this.flowMode,
       uniformRoundTripOk: this.uniformRoundTripOk,
     };
@@ -249,6 +251,7 @@ class SimControllerImpl implements SimController {
     this.compareTiltRel = result.tilted.relative;
     this.compareTiltDrainRel = result.tilted.drainRelative;
     this.compareSemiRel = result.semi.relative;
+    this.compareSpikeRel = result.spike.relative;
     return result;
   }
 

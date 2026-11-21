@@ -110,7 +110,7 @@ describe('thinFilmStepSemiImplicit', () => {
     expect(hasNonFinite(state.height)).toBe(false);
     const v1 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
     expect(Math.abs(v1 - v0) / v0).toBeLessThan(1e-6);
-  }, 30_000);
+  }, 60_000);
 
   it('decays a checkerboard at 50× the explicit capillary limit without growing', () => {
     const n = 24;
@@ -166,6 +166,7 @@ describe('thinFilmStepSemiImplicit', () => {
       }
       const std0 = stddev(state.height.data);
       const peak0 = peakOf(state.height.data);
+      const v0 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
       const dt = factor * explicitCapillaryDt(state.height, p);
       for (let step = 0; step < 60; step += 1) {
         thinFilmSubstepSemiImplicit(state, dt, p);
@@ -173,6 +174,8 @@ describe('thinFilmStepSemiImplicit', () => {
       expect(hasNonFinite(state.height)).toBe(false);
       expect(stddev(state.height.data)).toBeLessThan(std0);
       expect(peakOf(state.height.data)).toBeLessThanOrEqual(peak0);
+      const v1 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
+      expect(Math.abs(v1 - v0) / v0).toBeLessThan(1e-6);
     }
   }, 60_000);
 
@@ -212,6 +215,32 @@ describe('thinFilmStepSemiImplicit', () => {
     }
     expect(diff / peak).toBeLessThan(0.01);
   }, 120_000);
+
+  it('matches explicit on a pour spike, including a dry corner', () => {
+    const n = 64;
+    const p = { ...DEFAULT_THIN_FILM_PARAMS, dx: DEFAULT_CELL_SIZE_MM };
+    const explicitState = createThinFilmState(n, n);
+    addGaussianPuddle(explicitState.height, n / 2, n / 2, 1, 8);
+    addGaussianPuddle(explicitState.height, n / 2 + 6, n / 2, 3, 1.5);
+    const semiState = cloneThinFilmState(explicitState);
+
+    let simTime = 0;
+    while (simTime < 0.25) {
+      const dt = Math.min(64 * explicitCapillaryDt(semiState.height, p), 0.25 - simTime);
+      thinFilmSubstepSemiImplicit(semiState, dt, p);
+      simTime += dt;
+    }
+    thinFilmStep(explicitState, simTime, p);
+
+    expect(hasNonFinite(semiState.height)).toBe(false);
+    const diff = maxAbsDiff(explicitState.height, semiState.height);
+    let peak = 0;
+    for (let i = 0; i < explicitState.height.data.length; i += 1) {
+      peak = Math.max(peak, explicitState.height.data[i]!);
+    }
+    expect(diff / peak).toBeLessThan(0.01);
+    expect(Math.abs(semiState.height.data[0]! - explicitState.height.data[0]!)).toBeLessThan(1e-6);
+  }, 180_000);
 });
 
 function stddev(data: ArrayLike<number>): number {
