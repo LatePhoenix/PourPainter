@@ -1,6 +1,18 @@
 /** Simulation core entry. No React imports allowed. */
 export type { CanvasPoint, TexelCoord } from './coords';
 export { canvasToTexel, pointerToCanvas } from './coords';
+export type { Grid2D, MirrorAxis } from './cpu/grid';
+export {
+  copyGrid,
+  copyGridInto,
+  createGrid2D,
+  getCell,
+  hasNonFinite,
+  isMirrorSymmetric,
+  maxAbsDiff,
+  setCell,
+  totalVolume,
+} from './cpu/grid';
 export { createSimController, SimControllerError } from './controller';
 export type { GpuInitError, GpuInitErrorCode, GpuInitResult, GpuInitSuccess } from './gpu/device';
 export { requestGpuDevice } from './gpu/device';
