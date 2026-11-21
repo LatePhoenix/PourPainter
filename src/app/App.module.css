@@ -72,7 +72,8 @@
   position: absolute;
   top: 0.75rem;
   left: 0.75rem;
-  min-width: 9rem;
+  min-width: 12rem;
+  max-width: 22rem;
   padding: 0.6rem 0.75rem;
   border-radius: 4px;
   background: rgb(0 0 0 / 70%);
@@ -80,7 +81,40 @@
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.8rem;
   line-height: 1.45;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.debugMuted {
+  color: #bbb;
+  font-size: 0.72rem;
+  word-break: break-word;
+}
+
+.debugActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.debugActions button {
+  padding: 0.25rem 0.45rem;
+  border: 1px solid #666;
+  border-radius: 3px;
+  background: #222;
+  color: #f2f2f2;
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.debugActions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.debugActions button:hover:not(:disabled) {
+  background: #333;
 }
 
 .debugHint {

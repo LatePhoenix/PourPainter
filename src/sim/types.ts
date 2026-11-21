@@ -2,6 +2,33 @@ import type { CanvasPoint } from './coords';
 
 export type GridSize = 256 | 512 | 1024;
 
+export type CompareCaseResult = {
+  name: string;
+  maxAbsDiff: number;
+  relative: number;
+  drainRelative: number | null;
+  steps: number;
+  gridSize: number;
+  ok: boolean;
+};
+
+export type CompareToCpuResult = {
+  level: CompareCaseResult;
+  mixedDt: CompareCaseResult;
+  tilted: CompareCaseResult;
+  /** Worst relative height error across cases (overlay summary). */
+  relative: number;
+  maxAbsDiff: number;
+  steps: number;
+  gridSize: number;
+};
+
+export type UniformRoundTripResult = {
+  ok: boolean;
+  expected: Float32Array;
+  actual: Float32Array;
+};
+
 export type SimSettings = {
   /** Initial RNG seed (integer in [0, 2³²)). */
   seed: number;
@@ -33,6 +60,21 @@ export type SimStats = {
   lastTool: SimTool | null;
   deviceLost: boolean;
   deviceLostMessage: string | null;
+  /** Explicit substeps executed in the last animation frame. */
+  substepsLastFrame: number;
+  /** Sim-seconds advanced per wall-second (throughput; ADR 0003). */
+  simSecondsPerWallSecond: number;
+  /** GPU adapter / device label when available. */
+  gpuDeviceName: string | null;
+  /** Last "Compare to CPU" summary (worst rel), if run. */
+  compareRelative: number | null;
+  compareMaxAbs: number | null;
+  compareLevelRel: number | null;
+  compareMixedRel: number | null;
+  compareTiltRel: number | null;
+  compareTiltDrainRel: number | null;
+  /** Last uniform round-trip result, if run. */
+  uniformRoundTripOk: boolean | null;
 };
 
 /**
@@ -49,4 +91,8 @@ export type SimController = {
   pointer(tool: SimTool, event: SimPointerEvent): void;
   getStats(): SimStats;
   dispose(): void;
+  /** Debug: 64² CPU↔GPU compare (level + mixed-dt + tilted). */
+  compareToCpu(steps?: number): Promise<CompareToCpuResult>;
+  /** Debug: packUniforms ↔ WGSL FlowParams round-trip. */
+  checkUniformRoundTrip(): Promise<UniformRoundTripResult>;
 };
