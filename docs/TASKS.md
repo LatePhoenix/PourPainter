@@ -35,15 +35,20 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - No plan deviations. Next tasks (M0-02 / M0-03) can start once this is audited.
 
 ### M0-01b Tooling follow-ups from M0-01 audit
-- **Status:** todo
+- **Status:** done ([audit](audits/2026-11-21-M0-01b.md))
 - **Depends on:** M0-01
 - **Goal:** Close the small gaps found in [the M0-01 audit](audits/2026-11-21-M0-01.md).
 - **Acceptance criteria:**
-  - [ ] `no-restricted-imports` also blocks `react/*` and `react-dom/*` subpaths (e.g. `react-dom/client`) in sim/domain/render. Add a test or a documented probe showing it.
-  - [ ] `.nvmrc` → `24`, `engines.node` → `>=22`, `@types/node` major matches the `.nvmrc` major
-  - [ ] Remove `vitest/globals` from `tsconfig.vitest.json` (tests keep explicit imports)
-  - [ ] `npm run check` passes
+  - [x] `no-restricted-imports` also blocks `react/*` and `react-dom/*` subpaths (e.g. `react-dom/client`) in sim/domain/render. Add a test or a documented probe showing it.
+  - [x] `.nvmrc` → `24`, `engines.node` → `>=22`, `@types/node` major matches the `.nvmrc` major
+  - [x] Remove `vitest/globals` from `tsconfig.vitest.json` (tests keep explicit imports)
+  - [x] `npm run check` passes
 - **Handoff notes:**
+  - Extended `no-restricted-imports` patterns with `react`, `react/*`, `react-dom`, `react-dom/*` (exact `paths` entries kept for clearer messages).
+  - Added `tests/import-boundary.test.ts` using the ESLint API to assert `react-dom/client` and `react/jsx-runtime` are blocked in sim/domain/render.
+  - `.nvmrc` → 24; `engines.node` → `>=22`; `@types/node` → `^24` (matches `.nvmrc` major). README requirements line updated to match.
+  - Removed `vitest/globals` from `tsconfig.vitest.json`; tests already use explicit vitest imports.
+  - `npm run check` passes (9 tests). No new runtime dependencies.
 
 ### M0-02 Domain types, physics constants, seeded RNG
 - **Status:** todo
@@ -56,6 +61,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] `src/domain/physics.ts`: every physical constant and default (gravity, base viscosity, surface tension, silicone σ reduction, drying rate) with units in comments
   - [ ] `src/sim/rng.ts`: a seeded PRNG (e.g. mulberry32 or PCG); test that the same seed gives the same sequence
   - [ ] Unit tests for recipe round-trip
+  - [ ] _(from M0-01b audit)_ Add a `format:check` script (`prettier --check .`), include it in `check`, and run `npm run format` once so the repo is clean
 - **Handoff notes:**
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
