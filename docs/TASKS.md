@@ -216,7 +216,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (84 tests). No new dependencies. Explicit solver unchanged. Drain counter and hMax epoch still belong to M1-04.
 
 ### M1-06b Unconditionally convergent semi-implicit solve
-- **Status:** review
+- **Status:** todo ([audit: changes requested](audits/2026-11-21-M1-06b.md)). Continue on the existing branch `task/M1-06b-damped-jacobi`.
 - **Depends on:** M1-06
 - **Goal:** Remove the ~75× divergence cliff found in the [M1-06 audit](audits/2026-11-21-M1-06.md), so the 64× cap really is just an accuracy limit.
 - **Acceptance criteria:**
@@ -226,6 +226,10 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [x] Accuracy test with **default** params (σ from physics.ts, no overrides beyond dx): 64² puddle, 0.25 s, at 64× the explicit capillary Δt, relative L∞ vs explicit < 1%
   - [x] Fix the `SEMI_IMPLICIT_ACCURACY_FACTOR` comment so it matches reality once stability no longer depends on it. If sweep count or ω changes throughput, record the new 512² sim-s/wall-s in the handoff notes (target still ≥ 1).
   - [x] GPU "Compare to CPU" semi case still < 1e-3 relative
+  - [ ] _(audit round 1, finding 1)_ **Remove the uniform-shift fallback** (`SEMI_IMPLICIT_FLUX_RESIDUAL_MM` and the "keep h\* + shift + rescale" branch). The CPU always commits the limited flux form, exactly like the GPU. Restore the `h ≥ −1e-6` assert after limiting.
+  - [ ] _(audit round 1, finding 2)_ The 200× and 1000× noise tests pass on the flux path. Hard requirements: finite, peak ≤ initial, volume (canvas + drained) within 1e-6. Noise std should decrease; if 1000× doesn't, report the numbers in the handoff notes.
+  - [ ] _(audit round 1, finding 3)_ **Pour-spike test:** a 1 mm Gaussian puddle (radius 8) plus a 3 mm spike (radius 1.5) at +6 cells; 64², dx = 300/512, default params, 0.25 s, dt = 64 × the current explicit capillary Δt. CPU semi vs explicit rel L∞ < 1%, and the corner height within 1e-6 of explicit. The same case is in the GPU "Compare to CPU" harness: GPU semi vs CPU semi < 1e-3.
+  - [ ] _(audit round 1, finding 4)_ The heavy semi tests get explicit timeouts (≥ 60 s), or are slimmed, so CI keeps headroom. Note the suite runtime in the handoff notes.
 - **Handoff notes:**
   - Damping derivation is at the top of `src/sim/cpu/thinFilmSemi.ts`. Constant-M ∇⁴ has Fourier symbol 0…64/dx⁴ and diagonal 20 Mσ/dx⁴, so ρ(D⁻¹A) = 64/20 = 3.2. Undamped Jacobi at large Δt multiplies the stiff mode by 1−3.2 = −2.2. Damped Jacobi h ← (1−ω)h + ω h_J has multiplier 1−ωβ, which stays in (−1, 1] for every β ∈ (0, 3.2] iff 0 < ω < 2/3.2 = 0.625. **ω = 1/2** (`SEMI_IMPLICIT_JACOBI_OMEGA`), worst-mode factor 0.6. Still 20 sweeps. The same ω is the `jacobiOmega` uniform (the old pad slot at offset 36; struct stays 48 bytes) and the GPU sweep uses it.
   - The flux-form commit hⁿ − Δt ∇·q(h*) matches h* only when the residual is small. Past that, Δt times the leftover drives cells negative even though the sweeps are contracting. If any flux height is < −1e-6 or |h_flux − h*| > 0.2 mm (`SEMI_IMPLICIT_FLUX_RESIDUAL_MM`), the step keeps h* and adds a uniform constant (invisible to ∇⁴) so the cell sum matches hⁿ minus explicit drain; clipped holes are scaled back out of the positive film. The 20× compare peaks near 0.16 mm, so it stays on the limited flux commit the GPU writes. 1000× is O(1) mm and takes the h* path. The 64× factor is now only an accuracy cap.
