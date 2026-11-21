@@ -94,7 +94,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (37 tests).
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
-- **Status:** review
+- **Status:** done ([audit](audits/2026-11-21-M0-03.md))
 - **Depends on:** M0-01
 - **Goal:** Get a GPU device and a canvas on screen, behind the interface the UI will use.
 - **Acceptance criteria:**
@@ -123,6 +123,8 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] Async readback helper (GPU → `Float32Array`) for debugging and comparisons
   - [ ] Demo pass: a compute shader that blurs a test pattern each frame, plus a render pass that shows the grid as a grayscale image
   - [ ] A dev-only debug overlay (toggle with backtick) that shows FPS, grid size and step count
+  - [ ] _(from M0-03 audit)_ `context.configure()` runs only at init and when the canvas pixel size actually changes, never every frame
+  - [ ] _(from M0-03 audit)_ `SimController.init` rechecks `disposed` after awaiting the device, and if disposed, destroys the device and returns without touching the canvas
 - **Handoff notes:**
 
 ### M0-05 CPU reference grid utilities
