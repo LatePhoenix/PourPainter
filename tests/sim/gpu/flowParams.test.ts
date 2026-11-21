@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_THIN_FILM_PARAMS, maxStableDt } from '../../../src/sim/cpu/thinFilm';
 import {
   SEMI_IMPLICIT_ACCURACY_FACTOR,
+  SEMI_IMPLICIT_JACOBI_OMEGA,
   maxStableDtSemiImplicit,
 } from '../../../src/sim/cpu/thinFilmSemi';
 import { createGrid2D } from '../../../src/sim/cpu/grid';
@@ -25,6 +26,8 @@ describe('flowParams', () => {
     const view = new DataView(buf);
     expect(view.getFloat32(0, true)).toBeCloseTo(values.mu, 6);
     expect(view.getFloat32(32, true)).toBeCloseTo(values.dt, 6);
+    expect(view.getFloat32(36, true)).toBeCloseTo(values.jacobiOmega, 6);
+    expect(values.jacobiOmega).toBe(SEMI_IMPLICIT_JACOBI_OMEGA);
     expect(view.getUint32(40, true)).toBe(512);
     expect(view.getUint32(44, true)).toBe(512);
   });

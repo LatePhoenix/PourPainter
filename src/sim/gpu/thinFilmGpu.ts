@@ -2,7 +2,9 @@ import { createGrid2D, maxAbsDiff } from '../cpu/grid';
 import {
   SEMI_IMPLICIT_ACCURACY_FACTOR,
   SEMI_IMPLICIT_SWEEPS,
+  assertSemiImplicitDt,
   explicitCapillaryDt,
+  explicitCapillaryDtFromHMax,
   thinFilmSubstepSemiImplicit,
 } from '../cpu/thinFilmSemi';
 import {
@@ -74,6 +76,8 @@ export type ThinFilmGpuCompareResult = {
   tilted: ThinFilmGpuCaseResult;
   /** Semi-implicit vs CPU semi-implicit reference. */
   semi: ThinFilmGpuCaseResult;
+  /** Pour spike: GPU semi vs CPU semi, same limited flux commit. */
+  spike: ThinFilmGpuCaseResult;
   /** Convenience: worst relative height error across explicit cases. */
   relative: number;
   maxAbsDiff: number;
@@ -626,6 +630,13 @@ export function createThinFilmGpu(
     }
     packRingSlots(dts);
 
+    if (flowMode === 'semi') {
+      const capillary = explicitCapillaryDtFromHMax(state.hMaxHint, simParams);
+      for (const dt of dts) {
+        assertSemiImplicitDt(dt, capillary);
+      }
+    }
+
     for (let i = 0; i < dts.length; i += 1) {
       const offset = i * UNIFORM_RING_STRIDE;
       if (flowMode === 'semi') {
@@ -875,12 +886,14 @@ export function createThinFilmGpu(
       const mixedDt = await runMixedDtCompare(device, canvasFormat, n);
       const tilted = await runTiltedCompare(device, canvasFormat, n);
       const semi = await runSemiCompare(device, canvasFormat, n);
+      const spike = await runSpikeCompare(device, canvasFormat, n);
       const worst = [level, mixedDt, tilted].reduce((a, b) => (b.relative > a.relative ? b : a));
       return {
         level,
         mixedDt,
         tilted,
         semi,
+        spike,
         relative: worst.relative,
         maxAbsDiff: worst.maxAbsDiff,
         steps,
@@ -1109,6 +1122,9 @@ async function runSemiCompare(
     gpu.flowMode = 'semi';
     gpu.resetPuddle();
     gpu.writeHeight(initial);
+    // dts are 20× the capillary Δt of this field. The guard reads hMaxHint,
+    // which reset left at the demo seed, so set it to this peak.
+    gpu.hMaxHint = maxOf(initial);
     const encoder = device.createCommandEncoder({ label: 'compare-semi' });
     gpu.encodeSubsteps(encoder, dts);
     device.queue.submit([encoder.finish()]);
@@ -1116,6 +1132,65 @@ async function runSemiCompare(
       thinFilmSubstepSemiImplicit(cpu, stepDt, compareParams);
     }
     return await finishCompareCase(device, gpu, cpu, 'semi', steps, n, false);
+  } finally {
+    gpu.destroy();
+  }
+}
+
+/** 1 mm puddle plus a 3 mm spike. Same schedule as the CPU pour-spike test. */
+async function runSpikeCompare(
+  device: GPUDevice,
+  canvasFormat: GPUTextureFormat,
+  n: number,
+): Promise<ThinFilmGpuCaseResult> {
+  const compareParams: ThinFilmParams = {
+    ...DEFAULT_THIN_FILM_PARAMS,
+    dx: 300 / 512,
+  };
+  const seeded = createThinFilmState(n, n);
+  addGaussianPuddle(seeded.height, n / 2, n / 2, 1, 8);
+  addGaussianPuddle(seeded.height, n / 2 + 6, n / 2, 3, 1.5);
+  const initial = new Float64Array(seeded.height.data);
+  const schedule = createThinFilmState(n, n);
+  schedule.height.data.set(initial);
+  const dts: number[] = [];
+  const peaks: number[] = [];
+  let simTime = 0;
+  while (simTime < 0.25) {
+    const peak = maxOf(schedule.height.data);
+    const dt = Math.min(64 * explicitCapillaryDt(schedule.height, compareParams), 0.25 - simTime);
+    dts.push(dt);
+    peaks.push(peak);
+    thinFilmSubstepSemiImplicit(schedule, dt, compareParams);
+    simTime += dt;
+  }
+
+  const cpu = createThinFilmState(n, n);
+  cpu.height.data.set(initial);
+  const gpu = createThinFilmGpu(device, canvasFormat, n, n, compareParams);
+  try {
+    gpu.flowMode = 'semi';
+    gpu.resetPuddle();
+    gpu.writeHeight(Float32Array.from(initial));
+    for (let start = 0; start < dts.length; start += UNIFORM_RING_SLOTS) {
+      const chunk = dts.slice(start, start + UNIFORM_RING_SLOTS);
+      // The guard treats hMaxHint as the field the dts were taken from.
+      // Use the lowest peak in the chunk so each 64× step still fits,
+      // including the 10% hint tolerance.
+      let hint = peaks[start]!;
+      for (let i = 1; i < chunk.length; i += 1) {
+        const peak = peaks[start + i]!;
+        if (peak < hint) hint = peak;
+      }
+      gpu.hMaxHint = hint;
+      const encoder = device.createCommandEncoder({ label: 'compare-spike' });
+      gpu.encodeSubsteps(encoder, chunk);
+      device.queue.submit([encoder.finish()]);
+      for (const dt of chunk) {
+        thinFilmSubstepSemiImplicit(cpu, dt, compareParams);
+      }
+    }
+    return await finishCompareCase(device, gpu, cpu, 'spike', dts.length, n, false);
   } finally {
     gpu.destroy();
   }

@@ -10,7 +10,7 @@
 
 // FlowParams — keep in sync with src/sim/gpu/flowParams.ts
 // offsets: mu@0 sigma@4 rho@8 dx@12 gParX@16 gParY@20 gPerp@24 hMin@28
-//          dt@32 pad0@36 width@40 height@44  (size 48)
+//          dt@32 jacobiOmega@36 width@40 height@44  (size 48)
 struct FlowParams {
   mu: f32,
   sigma: f32,
@@ -21,7 +21,7 @@ struct FlowParams {
   gPerp: f32,
   hMin: f32,
   dt: f32,
-  pad0: f32,
+  jacobiOmega: f32,
   width: u32,
   height: u32,
 }

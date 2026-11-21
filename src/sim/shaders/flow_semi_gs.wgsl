@@ -1,13 +1,15 @@
 // One red or black Jacobi color for the semi-implicit capillary step.
-// See src/sim/cpu/thinFilmSemi.ts for the discretization.
+// See src/sim/cpu/thinFilmSemi.ts for the discretization and the ω bound.
 //
-//   (1 + Δt a_ii) h_i = rhs_i − Δt (∇·q_cap − a_ii h_i)
+//   h_J = (rhs_i − Δt (∇·q_cap − a_ii h_i)) / (1 + Δt a_ii)
+//   h  ← (1 − ω) h + ω h_J
 //   rhs_i = hⁿ_i − Δt ∇·q_ex
 //
-// q_ex is already in qx/qy. Mobility is frozen from hⁿ (the texture).
-// h* lives in `iterate`. Two entry points so the color is not a uniform
-// (a uniform rewrite would race inside one command buffer).
-// Width must be even so each row has width/2 cells of each color.
+// ω is params.jacobiOmega (SEMI_IMPLICIT_JACOBI_OMEGA). q_ex is already in
+// qx/qy. Mobility is frozen from hⁿ (the texture). h* lives in `iterate`.
+// Two entry points so the color is not a uniform (a uniform rewrite would
+// race inside one command buffer). Width must be even so each row has
+// width/2 cells of each color.
 
 struct FlowParams {
   mu: f32,
@@ -19,7 +21,7 @@ struct FlowParams {
   gPerp: f32,
   hMin: f32,
   dt: f32,
-  pad0: f32,
+  jacobiOmega: f32,
   width: u32,
   height: u32,
 }
@@ -194,7 +196,8 @@ fn sweep(linear: u32, color: u32) {
   let hi = hStar(x, y);
   let off = divC - a * hi;
   let denom = 1.0 + params.dt * a;
-  iterate[idx] = (rhs - params.dt * off) / denom;
+  let jacobi = (rhs - params.dt * off) / denom;
+  iterate[idx] = hi + params.jacobiOmega * (jacobi - hi);
 }
 
 @compute @workgroup_size(64)

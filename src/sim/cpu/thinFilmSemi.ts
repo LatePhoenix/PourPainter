@@ -19,48 +19,105 @@
  *
  *   h* + Δt ∇·q_cap(h*) = hⁿ − Δt ∇·q_ex
  *
- * then commits a finite-volume update from the original hⁿ
+ * The update is always the limited flux form, the same commit as the GPU:
  *
  *   hⁿ⁺¹ = hⁿ − Δt ∇·(q_ex + q_cap(h*))
  *
- * with the M1-01 donor limiter on the total face fluxes (positivity).
- * Because both sides use the same face fluxes, a converged h* matches hⁿ⁺¹
- * and volume (on canvas + drained) telescopes.
+ * with the M1-01 donor limiter. Exterior q_cap is 0. A converged h*
+ * matches that update, and volume (canvas + drained) telescopes.
+ * After limiting, h ≥ −1e-6.
  *
  * =====================================================================
- * Iteration: two-color Jacobi (not sequential GS, not a Poisson split)
+ * Iteration: damped two-color Jacobi
  * =====================================================================
  * A pair of constant-coefficient Poisson solves does not apply: M varies
  * in space, so ∇·(M ∇ ∇²h) does not factor into two discrete Laplacians
- * we can invert independently. Red and black are updated in turn, and
- * each cell solves its own diagonal exactly:
+ * we can invert independently. Red and black are updated in turn. The
+ * biharmonic stencil reaches the same color (radius 2), so each color is
+ * a Jacobi half-sweep: every cell of that color reads the field from the
+ * start of the half-sweep. That matches a parallel GPU dispatch.
  *
- *   (1 + Δt a_ii) h_i = rhs_i − Δt (∇·q_cap − a_ii h_i)
+ * Undamped Jacobi inverts the diagonal exactly,
  *
- * a_ii = ∂(∇·q_cap)/∂h_i from the Neumann stencil (interior faces only).
- * The biharmonic stencil reaches the same color (radius 2), so each color
- * is a Jacobi sweep: every cell of that color reads the field from the
- * start of the half-sweep. The other color keeps the values just written.
- * That matches a parallel GPU dispatch. `SEMI_IMPLICIT_SWEEPS` full
- * red/black pairs per step.
+ *   h_J = (rhs_i − Δt (∇·q_cap − a_ii h_i)) / (1 + Δt a_ii),
  *
- * Δt is NOT limited by Δ⁴/(32 M σ). `maxStableDtSemiImplicit` uses the
- * hydrostatic and advective bounds, plus an accuracy cap of
- * `SEMI_IMPLICIT_ACCURACY_FACTOR` times the explicit capillary Δt
- * (frozen-M linearization, not stability).
+ * which is the Jacobi step for (I + Δt A) h = rhs, A = ∇·(M ∇ ∇² ·).
+ * It is only conditionally convergent. For constant M the stencil of ∇⁴
+ * is the 13-point biharmonic (center 20, axis distance-1: −8, diagonals:
+ * +2, axis distance-2: +1) / dx⁴. Its Fourier symbol runs from 0 to
+ * 64/dx⁴ — the checkerboard, where λ(∇²) = −8/dx² so λ(∇⁴) = 64/dx⁴.
+ * The matrix diagonal is a_ii = 20 M σ / dx⁴, therefore
+ *
+ *   ρ(D⁻¹ A) = 64/20 = 3.2.
+ *
+ * At large Δt the undamped error multiplier on a mode with symbol β is
+ * 1 − β, and β reaches 3.2, so the multiplier reaches −2.2. That is the
+ * divergence past ~75× the explicit capillary Δt.
+ *
+ * Damped Jacobi mixes the old value back in:
+ *
+ *   h ← (1 − ω) h + ω h_J.
+ *
+ * At large Δt the multiplier is 1 − ω β. |1 − ω β| < 1 for every
+ * β ∈ (0, 3.2] if and only if 0 < ω < 2/3.2 = 0.625. At finite Δt the
+ * multiplier is a convex combination of 1 and 1 − β, so the same ω
+ * still keeps it inside (−1, 1]. The kernel mode β = 0 stays at 1,
+ * which is correct: constants are invisible to ∇⁴.
+ *
+ * ω = 1/2. Worst-mode factor |1 − 0.5 × 3.2| = 0.6 per pair.
+ * `SEMI_IMPLICIT_SWEEPS` = 20 pairs, which contracts the stiffest mode
+ * by 0.6²⁰ ≈ 4×10⁻⁵. The flux-form commit multiplies leftover residual
+ * by Δt a_ii, so 20 pairs are not bounded at 200× or 1000×. The
+ * scheduler never chooses those steps: Δt stays at or below
+ * `SEMI_IMPLICIT_ACCURACY_FACTOR` (64) × the explicit capillary Δt, and
+ * `thinFilmSubstepSemiImplicit` throws past that cap (10% tolerance).
+ * 20 pairs keep a 20% noise film bounded at 128×, two times the cap.
+ * Neumann ghosts fold off-diagonals into the diagonal, which lowers the
+ * local radius. ω = 1/2 sits 0.125 under the 0.625 bound for the cases
+ * where M varies from cell to cell.
+ *
+ * Δt is not limited by Δ⁴/(32 M σ) for convergence. `maxStableDtSemiImplicit`
+ * uses the hydrostatic and advective bounds, plus the accuracy factor
+ * times the explicit capillary Δt. That factor is only an accuracy cap
+ * on the frozen-M linearization.
  */
 
-import { copyGrid, createGrid2D, setCell, totalVolume, type Grid2D } from './grid';
+import { copyGrid, createGrid2D, totalVolume, type Grid2D } from './grid';
 import { maxStableDt, type ThinFilmParams, type ThinFilmState } from './thinFilm';
 
 /** Full red+black pairs per step. Shared with the GPU port. */
 export const SEMI_IMPLICIT_SWEEPS = 20;
 
 /**
+ * Damping for the two-color Jacobi solve. Shared with the GPU uniform.
+ * Derived above: any ω in (0, 2/3.2) converges; 1/2 leaves the stiffest
+ * mode at factor 0.6.
+ */
+export const SEMI_IMPLICIT_JACOBI_OMEGA = 0.5;
+
+/**
  * Accuracy cap: semi-implicit Δt ≤ this × the explicit capillary Δt.
- * Large enough for the 20× / 50× tests; small enough that frozen M stays close.
+ * Not a stability limit — damped Jacobi converges at any Δt. It keeps the
+ * frozen-mobility linearization from drifting off the nonlinear film.
  */
 export const SEMI_IMPLICIT_ACCURACY_FACTOR = 64;
+
+/**
+ * Slack on the accuracy cap so a dt taken from a rounded hMax hint is
+ * not rejected. A step above `ACCURACY_FACTOR × capillary Δt × this`
+ * is refused.
+ */
+export const SEMI_IMPLICIT_DT_TOLERANCE = 1.1;
+
+/** Throw when `dt` is past the accuracy cap of this capillary Δt. */
+export function assertSemiImplicitDt(dt: number, capillaryDt: number): void {
+  const limit = SEMI_IMPLICIT_ACCURACY_FACTOR * capillaryDt * SEMI_IMPLICIT_DT_TOLERANCE;
+  if (!(dt <= limit)) {
+    throw new Error(
+      `semi-implicit dt ${dt} s exceeds ${SEMI_IMPLICIT_ACCURACY_FACTOR}× the explicit capillary dt (limit ${limit} s)`,
+    );
+  }
+}
 
 function clampCoord(n: number, i: number): number {
   return Math.min(n - 1, Math.max(0, i));
@@ -358,7 +415,8 @@ function applyLimiter(
 
 /**
  * Stable Δt without the capillary Δ⁴ bound: hydrostatic, advective, and
- * `SEMI_IMPLICIT_ACCURACY_FACTOR` × the explicit capillary Δt.
+ * an accuracy cap of `SEMI_IMPLICIT_ACCURACY_FACTOR` × the explicit
+ * capillary Δt. Damping makes the inner solve convergent past that cap.
  */
 export function maxStableDtSemiImplicit(height: Grid2D, params: ThinFilmParams): number {
   const { mu, sigma, rho, dx, gParallelX, gParallelY, gPerp, hMin, dtSafety } = params;
@@ -397,11 +455,34 @@ export function explicitCapillaryDt(height: Grid2D, params: ThinFilmParams): num
   return maxStableDt(height, onlyCap);
 }
 
+/** Same capillary Δt from an hMax hint, without a full grid. */
+export function explicitCapillaryDtFromHMax(hMax: number, params: ThinFilmParams): number {
+  return explicitCapillaryDt(createGrid2D(1, 1, hMax), params);
+}
+
 /**
- * One semi-implicit step of size `dt` (caller chooses dt; not clamped to Δ⁴).
- * Mutates height and drainedVolume.
+ * One semi-implicit step of size `dt`. Refuses a dt above the accuracy
+ * cap of the current field (see `assertSemiImplicitDt`). Mutates height
+ * and drainedVolume.
  */
 export function thinFilmSubstepSemiImplicit(
+  state: ThinFilmState,
+  dt: number,
+  params: ThinFilmParams,
+): void {
+  if (!(dt > 0) || !Number.isFinite(dt)) {
+    throw new RangeError('dt must be a positive finite number');
+  }
+  assertSemiImplicitDt(dt, explicitCapillaryDt(state.height, params));
+  commitSemiImplicitSubstep(state, dt, params);
+}
+
+/**
+ * Limited-flux semi-implicit step with no accuracy-cap check.
+ * `thinFilmSubstepSemiImplicit` is the caller-facing entry. The 128×
+ * regression calls this directly because 128× is past the cap on purpose.
+ */
+export function commitSemiImplicitSubstep(
   state: ThinFilmState,
   dt: number,
   params: ThinFilmParams,
@@ -449,14 +530,15 @@ export function thinFilmSubstepSemiImplicit(
           const hi = hStar[i]!;
           const off = divC - a * hi;
           const denom = 1 + dt * a;
-          updated[i] = denom !== 0 ? (rhs[i]! - dt * off) / denom : rhs[i]!;
+          const jacobi = denom !== 0 ? (rhs[i]! - dt * off) / denom : rhs[i]!;
+          updated[i] = hi + SEMI_IMPLICIT_JACOBI_OMEGA * (jacobi - hi);
         }
       }
       hStar.set(updated);
     }
   }
 
-  // Capillary fluxes from the GS solution, added to explicit fluxes.
+  const dx = params.dx;
   for (let y = 0; y < gridH; y += 1) {
     for (let x = 0; x <= w; x += 1) {
       qx[y * (w + 1) + x]! += capFluxX(hStar, h0, w, gridH, x, y, params);
@@ -467,11 +549,9 @@ export function thinFilmSubstepSemiImplicit(
       qy[y * w + x]! += capFluxY(hStar, h0, w, gridH, x, y, params);
     }
   }
-
-  applyLimiter(qx, qy, h0, w, gridH, params.dx, dt);
+  applyLimiter(qx, qy, h0, w, gridH, dx, dt);
 
   let drained = 0;
-  const dx = params.dx;
   for (let y = 0; y < gridH; y += 1) {
     const qLeft = qx[y * (w + 1)]!;
     const qRight = qx[y * (w + 1) + w]!;
@@ -498,7 +578,7 @@ export function thinFilmSubstepSemiImplicit(
       if (!(hNew >= -1e-6)) {
         throw new Error(`thinFilmSubstepSemiImplicit: height ${hNew} < -1e-6 at (${x},${y})`);
       }
-      setCell(next, x, y, hNew > 0 ? hNew : 0);
+      next.data[y * w + x] = hNew > 0 ? hNew : 0;
     }
   }
   height.data.set(next.data);

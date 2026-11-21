@@ -216,17 +216,29 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (84 tests). No new dependencies. Explicit solver unchanged. Drain counter and hMax epoch still belong to M1-04.
 
 ### M1-06b Unconditionally convergent semi-implicit solve
-- **Status:** todo
+- **Status:** done ([audit](audits/2026-11-21-M1-06b.md), round 3 pass)
 - **Depends on:** M1-06
 - **Goal:** Remove the ~75× divergence cliff found in the [M1-06 audit](audits/2026-11-21-M1-06.md), so the 64× cap really is just an accuracy limit.
 - **Acceptance criteria:**
-  - [ ] The inner iteration converges for any Δt. Use **damped Jacobi** (ω from the stencil bound; document the derivation, ω ≈ 0.5 expected) or another scheme you can show is convergent (document it). Apply it in both the CPU reference and the GPU shaders.
-  - [ ] Stability test: a 1 mm film + 20% white noise (seeded), capillary only, dx = 300/512, Δt = **200×** and **1000×** the explicit capillary Δt, 60 steps. The std of the noise decreases and the peak stays ≤ the initial peak.
-  - [ ] No odd/even ripple: a Gaussian puddle (64², default params), 0.5 s at `dtSafety = 1.0`. The 2D roughness (mean |h − 4-neighbour average| over the interior) is within 10% of the explicit solver's, and the center row has exactly one interior maximum.
-  - [ ] Accuracy test with **default** params (σ from physics.ts, no overrides beyond dx): 64² puddle, 0.25 s, at 64× the explicit capillary Δt, relative L∞ vs explicit < 1%
-  - [ ] Fix the `SEMI_IMPLICIT_ACCURACY_FACTOR` comment so it matches reality once stability no longer depends on it. If sweep count or ω changes throughput, record the new 512² sim-s/wall-s in the handoff notes (target still ≥ 1).
-  - [ ] GPU "Compare to CPU" semi case still < 1e-3 relative
+  - [x] The inner iteration converges for any Δt. Use **damped Jacobi** (ω from the stencil bound; document the derivation, ω ≈ 0.5 expected) or another scheme you can show is convergent (document it). Apply it in both the CPU reference and the GPU shaders.
+  - [x] Stability test: a 1 mm film + 20% white noise (seeded), capillary only, dx = 300/512, Δt = **200×** and **1000×** the explicit capillary Δt, 60 steps. The std of the noise decreases and the peak stays ≤ the initial peak.
+  - [x] No odd/even ripple: a Gaussian puddle (64², default params), 0.5 s at `dtSafety = 1.0`. The 2D roughness (mean |h − 4-neighbour average| over the interior) is within 10% of the explicit solver's, and the center row has exactly one interior maximum.
+  - [x] Accuracy test with **default** params (σ from physics.ts, no overrides beyond dx): 64² puddle, 0.25 s, at 64× the explicit capillary Δt, relative L∞ vs explicit < 1%
+  - [x] Fix the `SEMI_IMPLICIT_ACCURACY_FACTOR` comment so it matches reality once stability no longer depends on it. If sweep count or ω changes throughput, record the new 512² sim-s/wall-s in the handoff notes (target still ≥ 1).
+  - [x] GPU "Compare to CPU" semi case still < 1e-3 relative
+  - [x] _(audit round 1, finding 1)_ **Remove the uniform-shift fallback** (`SEMI_IMPLICIT_FLUX_RESIDUAL_MM` and the "keep h\* + shift + rescale" branch). The CPU always commits the limited flux form, exactly like the GPU. Restore the `h ≥ −1e-6` assert after limiting.
+  - [x] _(audit round 1, finding 2)_ The 200× and 1000× noise tests pass on the flux path. Hard requirements: finite, peak ≤ initial, volume (canvas + drained) within 1e-6. Noise std should decrease; if 1000× doesn't, report the numbers in the handoff notes.
+  - [x] _(audit round 1, finding 3)_ **Pour-spike test:** a 1 mm Gaussian puddle (radius 8) plus a 3 mm spike (radius 1.5) at +6 cells; 64², dx = 300/512, default params, 0.25 s, dt = 64 × the current explicit capillary Δt. CPU semi vs explicit rel L∞ < 1%, and the corner height within 1e-6 of explicit. The same case is in the GPU "Compare to CPU" harness: GPU semi vs CPU semi < 1e-3.
+  - [x] _(audit round 1, finding 4)_ The heavy semi tests get explicit timeouts (≥ 60 s), or are slimmed, so CI keeps headroom. Note the suite runtime in the handoff notes.
+  - [x] _(audit round 2, user decision 2026-11-21)_ Set `SEMI_IMPLICIT_SWEEPS` back to **20** (CPU and GPU share it). This **supersedes** the 200×/1000× requirement above: replace those noise tests with one at **128×** the explicit capillary Δt (2× the scheduler cap), 60 steps. It must be finite, peak ≤ start, volume within 1e-6, std decreasing.
+  - [x] _(audit round 2)_ Guard: `thinFilmSubstepSemiImplicit` and the GPU semi path reject (throw / assert in dev) any dt above `SEMI_IMPLICIT_ACCURACY_FACTOR` × the explicit capillary Δt of the current field, with a 10% tolerance for hint rounding. Add a test.
+  - [x] _(audit round 2)_ Re-measure thick-film throughput at 512² in semi mode (right after reset), and once spread. Record FPS, substeps/frame and sim/wall in the handoff notes. Target: 60 fps / 1.00 sim-s/wall-s in both phases. Note the new suite runtime.
 - **Handoff notes:**
+  - `SEMI_IMPLICIT_SWEEPS` is **20** again, shared by the CPU loop and the GPU dispatch. ω = 1/2 is unchanged (ρ(D⁻¹A) = 3.2, bound 0.625). The 200×/1000× noise cases are gone. One seeded ±20% noise test runs 60 steps at **128×** the explicit capillary Δt. 128× is past the cap, so that test calls `commitSemiImplicitSubstep` (the flux body). It stays finite, peak ≤ start, std decreases, volume within 1e-6.
+  - `thinFilmSubstepSemiImplicit` throws when dt > `SEMI_IMPLICIT_ACCURACY_FACTOR` × the current field's explicit capillary Δt × `SEMI_IMPLICIT_DT_TOLERANCE` (1.1). The GPU semi path (`encodeSubsteps`) calls the same assert against `hMaxHint`. A test accepts a dt at the limit and rejects 1.001× it. Compare harnesses set `hMaxHint` to the peak those dts were computed from; reset was leaving the demo-seed hint (2 mm), which rejected a legal 20× step.
+  - Flux commit is unchanged: limited form only, h ≥ −1e-6 after limiting, no shift/rescale. Pour-spike CPU test still < 1% and the corner within 1e-6. GPU compare: level 1.71e-7, mixed-dt 2.63e-7, tilt 3.40e-7 / drain 1.77e-5, semi 1.84e-6, **spike 5.57e-6**.
+  - Throughput, nvidia, 512², semi, 20 sweeps: thick film **60 fps, 19 substeps/frame, sim/wall 1.00e+0 s/s**; after it spreads **60 fps, 18 substeps/frame, sim/wall 1.00e+0 s/s**.
+  - `npm run check` ~48 s wall, vitest 43.7 s, semi file 43.3 s (pour-spike 28.2 s, still the explicit reference), 90 tests. Timeouts unchanged (60 / 120 / 180 s). No new dependencies. Explicit solver unchanged.
 
 ### M1-03 Tilt control
 - **Status:** todo

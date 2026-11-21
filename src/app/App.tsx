@@ -176,6 +176,9 @@ export function App() {
           {stats.compareSemiRel !== null ? (
             <div>Semi rel {stats.compareSemiRel.toExponential(2)}</div>
           ) : null}
+          {stats.compareSpikeRel !== null ? (
+            <div>Spike rel {stats.compareSpikeRel.toExponential(2)}</div>
+          ) : null}
           <div>Mode {stats.flowMode}</div>
           {stats.uniformRoundTripOk !== null ? (
             <div>Uniforms {stats.uniformRoundTripOk ? 'ok' : 'FAIL'}</div>

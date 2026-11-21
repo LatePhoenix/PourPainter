@@ -19,6 +19,8 @@ export type CompareToCpuResult = {
   mixedDt: CompareCaseResult;
   tilted: CompareCaseResult;
   semi: CompareCaseResult;
+  /** Pour spike: GPU semi vs CPU semi. */
+  spike: CompareCaseResult;
   /** Worst relative height error across explicit cases (overlay summary). */
   relative: number;
   maxAbsDiff: number;
@@ -77,6 +79,7 @@ export type SimStats = {
   compareTiltRel: number | null;
   compareTiltDrainRel: number | null;
   compareSemiRel: number | null;
+  compareSpikeRel: number | null;
   flowMode: FlowMode;
   /** Last uniform round-trip result, if run. */
   uniformRoundTripOk: boolean | null;

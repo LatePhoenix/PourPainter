@@ -18,7 +18,7 @@ struct FlowParams {
   gPerp: f32,
   hMin: f32,
   dt: f32,
-  pad0: f32,
+  jacobiOmega: f32,
   width: u32,
   height: u32,
 }
