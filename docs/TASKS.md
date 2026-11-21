@@ -70,7 +70,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (19 tests). Densities are plausible relative acrylic values, not lab SG — tune later against real pours if needed.
 
 ### M0-02b Unit system, color space, seed and recipe validation
-- **Status:** review
+- **Status:** done ([audit](audits/2026-11-21-M0-02b.md))
 - **Depends on:** M0-02
 - **Goal:** Fix the issues from [the M0-02 audit](audits/2026-11-21-M0-02.md) before any physics code uses `physics.ts`.
 - **Acceptance criteria:**
@@ -103,6 +103,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] `SimController` interface in `src/sim/index.ts`: `init(canvas, settings)`, `start()`, `pause()`, `reset(seed)`, `step(n)`, `setTilt(x, y)`, `pointer(tool, event)`, `getStats()`, `dispose()`. Stubs are fine, but the types must be final-ish.
   - [ ] A full-window canvas cleared to a canvas-white color each frame by a rAF loop owned by the controller
   - [ ] Handles resize and device loss (logs and offers reload)
+  - [ ] _(from M0-02b audit)_ `src/sim/coords.ts`: `pointerToCanvas(event, canvasEl)` gives canvas-normalized coords, (0,0) bottom-left and y-up per the `ToolAction` docs. `canvasToTexel(x, y, gridN)` handles the y-flip for y-down textures. Unit tests cover the corners and center. `SimController.pointer` uses it.
 - **Handoff notes:**
 
 ### M0-04 Ping-pong compute framework + debug readback
@@ -197,3 +198,4 @@ Defaults assumed until the user decides: desktop first, a realistic-but-sped-up 
 
 ## Discovered
 _Implementers: add work found mid-task here (one line each). Don't do it in the current task._
+- _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
