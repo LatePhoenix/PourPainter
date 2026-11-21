@@ -216,7 +216,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (84 tests). No new dependencies. Explicit solver unchanged. Drain counter and hMax epoch still belong to M1-04.
 
 ### M1-06b Unconditionally convergent semi-implicit solve
-- **Status:** review ([audit round 2 addressed](audits/2026-11-21-M1-06b.md)). Branch `task/M1-06b-damped-jacobi`.
+- **Status:** done ([audit](audits/2026-11-21-M1-06b.md), round 3 pass)
 - **Depends on:** M1-06
 - **Goal:** Remove the ~75× divergence cliff found in the [M1-06 audit](audits/2026-11-21-M1-06.md), so the 64× cap really is just an accuracy limit.
 - **Acceptance criteria:**
