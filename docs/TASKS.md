@@ -134,7 +134,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` (53 tests) and `npm run build` pass. No new dependencies.
 
 ### M0-05 CPU reference grid utilities
-- **Status:** review
+- **Status:** done ([audit](audits/2026-11-21-M0-05.md))
 - **Depends on:** M0-02
 - **Goal:** The base for the CPU reference solvers and physics tests.
 - **Acceptance criteria:**
@@ -159,6 +159,8 @@ Only the current and next milestone are fully specified. Later ones get filled i
 - **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
+  - [ ] _(from M0-05 audit, do first)_ `maxAbsDiff` returns `NaN` when any compared cell is non-finite, unless both cells are identical non-finite values. `isMirrorSymmetric` returns `false` when a compared pair has a non-finite value. Add tests for both.
+  - [ ] _(from M0-05 audit)_ `getCell`/`setCell` throw `RangeError` on non-integer indices (out-of-bounds integers keep their current behavior)
   - [ ] Explicit finite-volume step for `∂h/∂t = -∇·q`, `q = -(h³/3μ)(∇p − ρ·g∥)`, where `p = ρ·g⊥·h − σ∇²h` and `g∥`/`g⊥` are the in-plane and normal parts of gravity for the current tilt (document the derivation in a comment, following PLAN §2.2)
   - [ ] Automatic stable `dt` (advective + h³ diffusion limits), with substeps
   - [ ] Edge cells drain: outflow past the border is removed and counted in `drainedVolume`
