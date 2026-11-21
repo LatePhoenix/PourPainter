@@ -1,3 +1,5 @@
+import { isValidSeed } from '../domain/seed';
+
 /**
  * Seeded PRNG (Mulberry32). Same seed → same sequence for recipe replay.
  * Returns floats in [0, 1).
@@ -12,6 +14,10 @@ export type Rng = {
 };
 
 export function createRng(seed: number): Rng {
+  if (!isValidSeed(seed)) {
+    throw new RangeError('RNG seed must be an integer in [0, 2^32)');
+  }
+
   let t = seed >>> 0;
 
   const next = (): number => {

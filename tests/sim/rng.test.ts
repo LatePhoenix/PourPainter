@@ -10,6 +10,20 @@ describe('createRng', () => {
     expect(seqA).toEqual(seqB);
   });
 
+  it('pins the first five outputs for seed 12345', () => {
+    const rng = createRng(12345);
+    expect([rng.next(), rng.next(), rng.next(), rng.next(), rng.next()]).toEqual([
+      0.9797282677609473, 0.3067522644996643, 0.484205421525985, 0.817934412509203,
+      0.5094283693470061,
+    ]);
+  });
+
+  it('throws on non-integer or out-of-range seeds', () => {
+    expect(() => createRng(1.2)).toThrow(RangeError);
+    expect(() => createRng(-1)).toThrow(RangeError);
+    expect(() => createRng(2 ** 32)).toThrow(RangeError);
+  });
+
   it('diverges for different seeds', () => {
     const a = createRng(1);
     const b = createRng(2);

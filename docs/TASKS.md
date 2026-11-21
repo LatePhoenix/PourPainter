@@ -70,21 +70,28 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (19 tests). Densities are plausible relative acrylic values, not lab SG — tune later against real pours if needed.
 
 ### M0-02b Unit system, color space, seed and recipe validation
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M0-02
 - **Goal:** Fix the issues from [the M0-02 audit](audits/2026-11-21-M0-02.md) before any physics code uses `physics.ts`.
 - **Acceptance criteria:**
-  - [ ] `physics.ts` uses one consistent **mm–g–s** sim unit system, stated at the top of the file: length mm, mass g, time s. That gives pressure g/(mm·s²) = Pa, viscosity g/(mm·s) = Pa·s, surface tension g/s² = mN/m, density g/mm³.
-  - [ ] `SURFACE_TENSION` is expressed in mN/m (≈35), with the silicone and temperature coefficients converted to match; names say the unit (e.g. `SURFACE_TENSION_MN_M`)
-  - [ ] `Paint.density` stays g/ml for people; add `densityToSim(gPerMl) → g/mm³` (×1e-3) and use it wherever sim code needs ρ
-  - [ ] Test: capillary length `√(σ/(ρ·g))` with the defaults is 1.5–2.0 mm
-  - [ ] `Rgb` is documented as **sRGB 0–1**; add `srgbToLinear` in `src/domain` (or `src/render`) with a test at known points (0, 0.04045, 0.5, 1)
-  - [ ] `createRng` throws on a non-integer seed or one outside [0, 2³²); `parseRecipe` rejects such seeds
-  - [ ] Golden-value test: the first 5 `next()` outputs for seed 12345 are pinned
-  - [ ] `validateRecipe` (called by `parseRecipe`) rejects: empty or duplicate paint ids; cup layers or pour actions whose `paintId` isn't in `paints`; canvas width/height ≤ 0; volume ≤ 0; density ≤ 0; rgb outside [0,1]; negative ratios or silicone drops; negative or non-ascending `t`. One test per rule.
-  - [ ] Decide whether tool coordinates may fall outside [0,1], and document it in `ToolAction`'s comment
-  - [ ] `npm run check` passes
+  - [x] `physics.ts` uses one consistent **mm–g–s** sim unit system, stated at the top of the file: length mm, mass g, time s. That gives pressure g/(mm·s²) = Pa, viscosity g/(mm·s) = Pa·s, surface tension g/s² = mN/m, density g/mm³.
+  - [x] `SURFACE_TENSION` is expressed in mN/m (≈35), with the silicone and temperature coefficients converted to match; names say the unit (e.g. `SURFACE_TENSION_MN_M`)
+  - [x] `Paint.density` stays g/ml for people; add `densityToSim(gPerMl) → g/mm³` (×1e-3) and use it wherever sim code needs ρ
+  - [x] Test: capillary length `√(σ/(ρ·g))` with the defaults is 1.5–2.0 mm
+  - [x] `Rgb` is documented as **sRGB 0–1**; add `srgbToLinear` in `src/domain` (or `src/render`) with a test at known points (0, 0.04045, 0.5, 1)
+  - [x] `createRng` throws on a non-integer seed or one outside [0, 2³²); `parseRecipe` rejects such seeds
+  - [x] Golden-value test: the first 5 `next()` outputs for seed 12345 are pinned
+  - [x] `validateRecipe` (called by `parseRecipe`) rejects: empty or duplicate paint ids; cup layers or pour actions whose `paintId` isn't in `paints`; canvas width/height ≤ 0; volume ≤ 0; density ≤ 0; rgb outside [0,1]; negative ratios or silicone drops; negative or non-ascending `t`. One test per rule.
+  - [x] Decide whether tool coordinates may fall outside [0,1], and document it in `ToolAction`'s comment
+  - [x] `npm run check` passes
 - **Handoff notes:**
+  - Adopted mm–g–s in `physics.ts`: `SURFACE_TENSION_MN_M = 35`, temp coeff `0.15` mN/(m·°C); `densityToSim` + `DEFAULT_PAINT_DENSITY_G_MM3`; `capillaryLengthMm` helper. Capillary length ≈ 1.72 mm under defaults.
+  - `Rgb` documented as sRGB; `src/domain/color.ts` adds `srgbToLinear` / channel helper with known-point tests.
+  - `isValidSeed` in `src/domain/seed.ts`; `createRng` throws on bad seeds; `validateRecipe` + `parseRecipe` enforce integer seeds in [0, 2³²). Golden first-5 sequence for seed 12345 pinned.
+  - `validateRecipe` covers all listed semantic rules (one test each in `tests/domain/validate-recipe.test.ts`).
+  - **Coords decision:** tool coordinates may leave [0,1] (off-canvas strokes allowed); documented on `ToolAction`. Sim should clamp/ignore later.
+  - Breaking rename: `SURFACE_TENSION_N_M` → `SURFACE_TENSION_MN_M` (nothing consumed it yet). No new dependencies.
+  - `npm run check` passes (37 tests).
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
 - **Status:** todo
