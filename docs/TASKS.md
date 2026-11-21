@@ -155,7 +155,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 **Milestone done when:** you can pour a puddle of a single color, tilt the canvas, and it flows and runs off the edge looking like glossy liquid.
 
 ### M1-01 CPU thin-film solver
-- **Status:** review ([audit: changes requested](audits/2026-11-21-M1-01.md) addressed on `task/M1-01-cpu-thin-film`).
+- **Status:** review. Audit round 2 = [pass once CI is green](audits/2026-11-21-M1-01.md). Remaining: the CI timeout in the sharp-box test.
 - **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
@@ -234,4 +234,5 @@ Defaults assumed until the user decides: desktop first, a realistic-but-sped-up 
 _Implementers: add work found mid-task here (one line each). Don't do it in the current task._
 - _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
 - _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
+- _(M1-01 audit r2)_ Bump `actions/checkout` and `actions/setup-node` to v5 in `.github/workflows/check.yml` (v4 targets the deprecated Node 20 runtime).
 - _(M1-01 audit fix)_ M0-05 specified `Grid2D` as Float32 for GPU parity; M1-01 needed Float64 for 1e-6 conservation on long explicit runs. Confirm in M1-02 whether CPU↔GPU compares should quantize the CPU field to f32 before diffing.
