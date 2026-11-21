@@ -241,7 +241,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` ~48 s wall, vitest 43.7 s, semi file 43.3 s (pour-spike 28.2 s, still the explicit reference), 90 tests. Timeouts unchanged (60 / 120 / 180 s). No new dependencies. Explicit solver unchanged.
 
 ### M1-06c Make heavy semi-implicit tests CI-safe
-- **Status:** review
+- **Status:** done ([audit](audits/2026-11-21-M1-06c.md))
 - **Depends on:** M1-06b
 - **Goal:** Stop the flaky CI failure found after merging M1-06b. On GitHub runners all 90 tests pass, but the run fails with `Vitest caught 1 unhandled error … [vitest-worker]: Timeout calling "onTaskUpdate"`. Long synchronous tests block the worker's event loop. On CI, `thinFilmSemi.test.ts` took 72.7 s, including "matches explicit on a pour spike, including a dry corner" at **45.2 s** and "stays within 1% of explicit at 64× with default physics" at **23.2 s**. (Run #43 on main @ a2dc65d.)
 - **Acceptance criteria:**
@@ -310,3 +310,4 @@ _Implementers: add work found mid-task here (one line each). Don't do it in the 
 - _(M1-02 audit, finding 5)_ GPU `flow_update.wgsl`: count `hNew < −1e-6` events in a debug atomic, and show it in the overlay (it should always be 0, as a tripwire for the flux limiter).
 - _(M1-02 audit r2)_ Guard `ThinFilmGpu.encodeSubsteps` against being called twice on the same `GPUCommandEncoder` (it would overwrite the uniform ring and silently bring back the mixed-dt bug). Throw, or document it loudly.
 - _(M1-01 audit fix, resolved in M1-02)_ CPU↔GPU compares quantize the CPU `Grid2D` (Float64) to f32 before `maxAbsDiff`.
+- _(M1-06c audit)_ Fixture staleness guard: store a hash of `src/sim/cpu/thinFilm.ts` + `grid.ts` in each `tests/fixtures/semi-explicit-*.json`. The test fails with "regenerate fixtures (npx vite-node scripts/regen-semi-explicit-fixtures.ts)" when the explicit solver source has changed.
