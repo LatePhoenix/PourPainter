@@ -177,7 +177,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes. No new dependencies. ADR 0003 / M1-06 still pending user OK (audit finding 5).
 
 ### M1-02 GPU thin-film flow
-- **Status:** review ([audit: changes requested](audits/2026-11-21-M1-02.md) addressed on `task/M1-02-gpu-thin-film`).
+- **Status:** done ([audit](audits/2026-11-21-M1-02.md), round 2 pass)
 - **Depends on:** M0-04, M1-01
 - **Goal:** Port M1-01 to WGSL compute passes.
 - **Acceptance criteria:**
@@ -228,6 +228,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] Added volume is accounted for in stats (poured = on canvas + drained)
   - [ ] _(from M1-02 audit, finding 4)_ Replace the `atomic<u32>` micro-mm³ drain counter (it wraps at ≈ 4.3 ml and truncates every add) with per-border-face `f32` accumulators, one slot per border face, owned by one thread. Sum them in float64 on the CPU at sync, then clear. Sync at least once a second, and on demand for stats. Test: tilted drain of > 10 ml matches the CPU reference within 1e-3 relative.
   - [ ] _(from M1-02 audit, finding 3)_ Pour deposits raise `hMaxHint` immediately (by at least the deposited peak), so the timestep stays stable while pouring
+  - [ ] _(from M1-02 audit r2)_ A stale hMax readback must not lower the hint below a pour bump made after that reduction was scheduled (epoch-tag each reduction; `hint = max(measured × 1.1, bumps since epoch)`). Test: schedule a reduction, pour, resolve the reduction; the hint stays ≥ the post-pour peak.
 - **Handoff notes:**
 
 ### M1-05 Lit film rendering
@@ -260,4 +261,5 @@ _Implementers: add work found mid-task here (one line each). Don't do it in the 
 - _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
 - _(M1-01 audit r2)_ Bump `actions/checkout` and `actions/setup-node` to v5 in `.github/workflows/check.yml` (v4 targets the deprecated Node 20 runtime).
 - _(M1-02 audit, finding 5)_ GPU `flow_update.wgsl`: count `hNew < −1e-6` events in a debug atomic, and show it in the overlay (it should always be 0, as a tripwire for the flux limiter).
+- _(M1-02 audit r2)_ Guard `ThinFilmGpu.encodeSubsteps` against being called twice on the same `GPUCommandEncoder` (it would overwrite the uniform ring and silently bring back the mixed-dt bug). Throw, or document it loudly.
 - _(M1-01 audit fix, resolved in M1-02)_ CPU↔GPU compares quantize the CPU `Grid2D` (Float64) to f32 before `maxAbsDiff`.
