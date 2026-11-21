@@ -29,11 +29,14 @@ export {
 } from './thinFilm';
 export {
   SEMI_IMPLICIT_ACCURACY_FACTOR,
+  SEMI_IMPLICIT_DT_TOLERANCE,
   SEMI_IMPLICIT_JACOBI_OMEGA,
   SEMI_IMPLICIT_SWEEPS,
+  assertSemiImplicitDt,
   capillaryDiagonal,
   capillaryDivergence,
   explicitCapillaryDt,
+  explicitCapillaryDtFromHMax,
   maxStableDtSemiImplicit,
   thinFilmStepSemiImplicit,
   thinFilmSubstepSemiImplicit,

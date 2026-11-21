@@ -12,6 +12,8 @@ import {
   maxAbsDiff,
   maxStableDt,
   maxStableDtSemiImplicit,
+  SEMI_IMPLICIT_ACCURACY_FACTOR,
+  SEMI_IMPLICIT_DT_TOLERANCE,
   SEMI_IMPLICIT_JACOBI_OMEGA,
   setCell,
   thinFilmStep,
@@ -20,6 +22,7 @@ import {
   totalFilmVolumeMm3,
   type ThinFilmParams,
 } from '../../../src/sim/cpu';
+import { commitSemiImplicitSubstep } from '../../../src/sim/cpu/thinFilmSemi';
 import { createRng } from '../../../src/sim/rng';
 
 function params(overrides: Partial<ThinFilmParams> = {}): ThinFilmParams {
@@ -145,7 +148,7 @@ describe('thinFilmStepSemiImplicit', () => {
     expect(SEMI_IMPLICIT_JACOBI_OMEGA).toBeLessThan(2 / 3.2);
   });
 
-  it('damps 20% seeded noise at 200× and 1000× the capillary limit', () => {
+  it('damps 20% seeded noise at 128× the capillary limit', () => {
     const n = 32;
     const p = params({
       dx: DEFAULT_CELL_SIZE_MM,
@@ -156,28 +159,38 @@ describe('thinFilmStepSemiImplicit', () => {
       mu: DEFAULT_THIN_FILM_PARAMS.mu,
       dtSafety: 1,
     });
-    for (const factor of [200, 1000]) {
-      const state = createThinFilmState(n, n, 1);
-      const rng = createRng(20261121);
-      for (let y = 0; y < n; y += 1) {
-        for (let x = 0; x < n; x += 1) {
-          setCell(state.height, x, y, 1 + 0.2 * (2 * rng.next() - 1));
-        }
+    const state = createThinFilmState(n, n, 1);
+    const rng = createRng(20261121);
+    for (let y = 0; y < n; y += 1) {
+      for (let x = 0; x < n; x += 1) {
+        setCell(state.height, x, y, 1 + 0.2 * (2 * rng.next() - 1));
       }
-      const std0 = stddev(state.height.data);
-      const peak0 = peakOf(state.height.data);
-      const v0 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
-      const dt = factor * explicitCapillaryDt(state.height, p);
-      for (let step = 0; step < 60; step += 1) {
-        thinFilmSubstepSemiImplicit(state, dt, p);
-      }
-      expect(hasNonFinite(state.height)).toBe(false);
-      expect(stddev(state.height.data)).toBeLessThan(std0);
-      expect(peakOf(state.height.data)).toBeLessThanOrEqual(peak0);
-      const v1 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
-      expect(Math.abs(v1 - v0) / v0).toBeLessThan(1e-6);
     }
+    const std0 = stddev(state.height.data);
+    const peak0 = peakOf(state.height.data);
+    const v0 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
+    // 128× is past the accuracy cap on purpose (2× the scheduler cap).
+    const dt = 128 * explicitCapillaryDt(state.height, p);
+    for (let step = 0; step < 60; step += 1) {
+      commitSemiImplicitSubstep(state, dt, p);
+    }
+    expect(hasNonFinite(state.height)).toBe(false);
+    expect(stddev(state.height.data)).toBeLessThan(std0);
+    expect(peakOf(state.height.data)).toBeLessThanOrEqual(peak0);
+    const v1 = totalFilmVolumeMm3(state, p.dx) + state.drainedVolume;
+    expect(Math.abs(v1 - v0) / v0).toBeLessThan(1e-6);
   }, 60_000);
+
+  it('rejects a dt above the accuracy cap and accepts the 10% tolerance', () => {
+    const p = params({ gPerp: 0, gParallelX: 0, gParallelY: 0 });
+    const state = createThinFilmState(8, 8, 1);
+    const cap = explicitCapillaryDt(state.height, p);
+    const limit = SEMI_IMPLICIT_ACCURACY_FACTOR * SEMI_IMPLICIT_DT_TOLERANCE * cap;
+    expect(() => thinFilmSubstepSemiImplicit(state, limit, p)).not.toThrow();
+    expect(() =>
+      thinFilmSubstepSemiImplicit(createThinFilmState(8, 8, 1), limit * 1.001, p),
+    ).toThrow(/capillary/);
+  });
 
   it('has no odd/even ripple against the explicit solver at dtSafety 1', () => {
     const n = 64;

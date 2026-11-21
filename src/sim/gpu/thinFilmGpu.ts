@@ -2,7 +2,9 @@ import { createGrid2D, maxAbsDiff } from '../cpu/grid';
 import {
   SEMI_IMPLICIT_ACCURACY_FACTOR,
   SEMI_IMPLICIT_SWEEPS,
+  assertSemiImplicitDt,
   explicitCapillaryDt,
+  explicitCapillaryDtFromHMax,
   thinFilmSubstepSemiImplicit,
 } from '../cpu/thinFilmSemi';
 import {
@@ -628,6 +630,13 @@ export function createThinFilmGpu(
     }
     packRingSlots(dts);
 
+    if (flowMode === 'semi') {
+      const capillary = explicitCapillaryDtFromHMax(state.hMaxHint, simParams);
+      for (const dt of dts) {
+        assertSemiImplicitDt(dt, capillary);
+      }
+    }
+
     for (let i = 0; i < dts.length; i += 1) {
       const offset = i * UNIFORM_RING_STRIDE;
       if (flowMode === 'semi') {
@@ -1113,6 +1122,9 @@ async function runSemiCompare(
     gpu.flowMode = 'semi';
     gpu.resetPuddle();
     gpu.writeHeight(initial);
+    // dts are 20× the capillary Δt of this field. The guard reads hMaxHint,
+    // which reset left at the demo seed, so set it to this peak.
+    gpu.hMaxHint = maxOf(initial);
     const encoder = device.createCommandEncoder({ label: 'compare-semi' });
     gpu.encodeSubsteps(encoder, dts);
     device.queue.submit([encoder.finish()]);
@@ -1142,10 +1154,13 @@ async function runSpikeCompare(
   const schedule = createThinFilmState(n, n);
   schedule.height.data.set(initial);
   const dts: number[] = [];
+  const peaks: number[] = [];
   let simTime = 0;
   while (simTime < 0.25) {
+    const peak = maxOf(schedule.height.data);
     const dt = Math.min(64 * explicitCapillaryDt(schedule.height, compareParams), 0.25 - simTime);
     dts.push(dt);
+    peaks.push(peak);
     thinFilmSubstepSemiImplicit(schedule, dt, compareParams);
     simTime += dt;
   }
@@ -1159,6 +1174,15 @@ async function runSpikeCompare(
     gpu.writeHeight(Float32Array.from(initial));
     for (let start = 0; start < dts.length; start += UNIFORM_RING_SLOTS) {
       const chunk = dts.slice(start, start + UNIFORM_RING_SLOTS);
+      // The guard treats hMaxHint as the field the dts were taken from.
+      // Use the lowest peak in the chunk so each 64× step still fits,
+      // including the 10% hint tolerance.
+      let hint = peaks[start]!;
+      for (let i = 1; i < chunk.length; i += 1) {
+        const peak = peaks[start + i]!;
+        if (peak < hint) hint = peak;
+      }
+      gpu.hMaxHint = hint;
       const encoder = device.createCommandEncoder({ label: 'compare-spike' });
       gpu.encodeSubsteps(encoder, chunk);
       device.queue.submit([encoder.finish()]);

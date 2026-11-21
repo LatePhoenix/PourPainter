@@ -65,29 +65,28 @@
  * which is correct: constants are invisible to ∇⁴.
  *
  * ω = 1/2. Worst-mode factor |1 − 0.5 × 3.2| = 0.6 per pair.
- * `SEMI_IMPLICIT_SWEEPS` = 70 pairs. Twenty pairs already contract the
- * stiffest mode by 0.6²⁰ ≈ 4×10⁻⁵, but the flux-form commit multiplies
- * the leftover by Δt a_ii. At 1000× the capillary limit that product is
- * hundreds, and 20 pairs still leave a residual the donor limiter turns
- * into a spike (peak 6.3 mm on the 20% noise test). 60 pairs still
- * overshoot (peak 1.35 mm). 70 pairs keep that peak at 1.14 mm, under
- * the 1.20 mm start. The constant-M checkerboard is the stiffest
- * uniform mode;
+ * `SEMI_IMPLICIT_SWEEPS` = 20 pairs, which contracts the stiffest mode
+ * by 0.6²⁰ ≈ 4×10⁻⁵. The flux-form commit multiplies leftover residual
+ * by Δt a_ii, so 20 pairs are not bounded at 200× or 1000×. The
+ * scheduler never chooses those steps: Δt stays at or below
+ * `SEMI_IMPLICIT_ACCURACY_FACTOR` (64) × the explicit capillary Δt, and
+ * `thinFilmSubstepSemiImplicit` throws past that cap (10% tolerance).
+ * 20 pairs keep a 20% noise film bounded at 128×, two times the cap.
  * Neumann ghosts fold off-diagonals into the diagonal, which lowers the
  * local radius. ω = 1/2 sits 0.125 under the 0.625 bound for the cases
  * where M varies from cell to cell.
  *
- * Δt is not limited by Δ⁴/(32 M σ). `maxStableDtSemiImplicit` uses the
- * hydrostatic and advective bounds, plus `SEMI_IMPLICIT_ACCURACY_FACTOR`
- * times the explicit capillary Δt. With the damping above, that factor
- * is only an accuracy cap on the frozen-M linearization.
+ * Δt is not limited by Δ⁴/(32 M σ) for convergence. `maxStableDtSemiImplicit`
+ * uses the hydrostatic and advective bounds, plus the accuracy factor
+ * times the explicit capillary Δt. That factor is only an accuracy cap
+ * on the frozen-M linearization.
  */
 
 import { copyGrid, createGrid2D, totalVolume, type Grid2D } from './grid';
 import { maxStableDt, type ThinFilmParams, type ThinFilmState } from './thinFilm';
 
 /** Full red+black pairs per step. Shared with the GPU port. */
-export const SEMI_IMPLICIT_SWEEPS = 70;
+export const SEMI_IMPLICIT_SWEEPS = 20;
 
 /**
  * Damping for the two-color Jacobi solve. Shared with the GPU uniform.
@@ -102,6 +101,23 @@ export const SEMI_IMPLICIT_JACOBI_OMEGA = 0.5;
  * frozen-mobility linearization from drifting off the nonlinear film.
  */
 export const SEMI_IMPLICIT_ACCURACY_FACTOR = 64;
+
+/**
+ * Slack on the accuracy cap so a dt taken from a rounded hMax hint is
+ * not rejected. A step above `ACCURACY_FACTOR × capillary Δt × this`
+ * is refused.
+ */
+export const SEMI_IMPLICIT_DT_TOLERANCE = 1.1;
+
+/** Throw when `dt` is past the accuracy cap of this capillary Δt. */
+export function assertSemiImplicitDt(dt: number, capillaryDt: number): void {
+  const limit = SEMI_IMPLICIT_ACCURACY_FACTOR * capillaryDt * SEMI_IMPLICIT_DT_TOLERANCE;
+  if (!(dt <= limit)) {
+    throw new Error(
+      `semi-implicit dt ${dt} s exceeds ${SEMI_IMPLICIT_ACCURACY_FACTOR}× the explicit capillary dt (limit ${limit} s)`,
+    );
+  }
+}
 
 function clampCoord(n: number, i: number): number {
   return Math.min(n - 1, Math.max(0, i));
@@ -439,11 +455,34 @@ export function explicitCapillaryDt(height: Grid2D, params: ThinFilmParams): num
   return maxStableDt(height, onlyCap);
 }
 
+/** Same capillary Δt from an hMax hint, without a full grid. */
+export function explicitCapillaryDtFromHMax(hMax: number, params: ThinFilmParams): number {
+  return explicitCapillaryDt(createGrid2D(1, 1, hMax), params);
+}
+
 /**
- * One semi-implicit step of size `dt` (caller chooses dt; not clamped to Δ⁴).
- * Mutates height and drainedVolume.
+ * One semi-implicit step of size `dt`. Refuses a dt above the accuracy
+ * cap of the current field (see `assertSemiImplicitDt`). Mutates height
+ * and drainedVolume.
  */
 export function thinFilmSubstepSemiImplicit(
+  state: ThinFilmState,
+  dt: number,
+  params: ThinFilmParams,
+): void {
+  if (!(dt > 0) || !Number.isFinite(dt)) {
+    throw new RangeError('dt must be a positive finite number');
+  }
+  assertSemiImplicitDt(dt, explicitCapillaryDt(state.height, params));
+  commitSemiImplicitSubstep(state, dt, params);
+}
+
+/**
+ * Limited-flux semi-implicit step with no accuracy-cap check.
+ * `thinFilmSubstepSemiImplicit` is the caller-facing entry. The 128×
+ * regression calls this directly because 128× is past the cap on purpose.
+ */
+export function commitSemiImplicitSubstep(
   state: ThinFilmState,
   dt: number,
   params: ThinFilmParams,
