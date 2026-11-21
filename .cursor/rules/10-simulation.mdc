@@ -6,7 +6,8 @@ alwaysApply: false
 
 - No imports from React or `src/app` in these folders.
 - The model is a 2.5D thin film (lubrication approximation) on a grid. See docs/PLAN.md section 2 before changing equations.
-- Units: mm, s, Pa·s, N/m. Document units on every physical parameter in `src/domain/physics.ts`.
+- Sim units are the consistent **mm–g–s** system: length mm, mass g, time s, so pressure = Pa, viscosity = Pa·s, surface tension = mN/m (g/s²), density = g/mm³. Never mix in N/m or g/ml inside sim math; convert at the domain boundary. Document units on every physical parameter in `src/domain/physics.ts`.
+- Colors in the domain are sRGB 0–1; convert to linear before blending or lighting.
 - Each physics compute pass has a matching CPU function in `src/sim/cpu/` and a Vitest test. At minimum, test: total paint volume is conserved (except for edge drain), no NaN/Inf after N steps, and a symmetric initial state stays symmetric.
 - Color/layer advection must be low-diffusion (BFECC or MacCormack with limiter). Never use plain semi-Lagrangian alone for color.
 - Clamp timesteps for stability (CFL plus the h³ diffusion limit). Use substeps instead of hoping.
