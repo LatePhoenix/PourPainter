@@ -155,7 +155,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 **Milestone done when:** you can pour a puddle of a single color, tilt the canvas, and it flows and runs off the edge looking like glossy liquid.
 
 ### M1-01 CPU thin-film solver
-- **Status:** review
+- **Status:** todo ([audit: changes requested](audits/2026-11-21-M1-01.md)). Continue on the existing branch `task/M1-01-cpu-thin-film`.
 - **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
@@ -165,6 +165,10 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [x] Automatic stable `dt` (advective + h³ diffusion limits), with substeps
   - [x] Edge cells drain: outflow past the border is removed and counted in `drainedVolume`
   - [x] Tests: volume conserved (total + drained) to 1e-4 relative over 500 steps; no NaNs; a centered puddle on a flat canvas stays symmetric; with tilt, the center of mass moves downhill
+  - [ ] _(audit round 1, finding 1)_ Replace the `h<0 → 0` clamp with a **positivity-preserving flux limiter**: scale each cell's outgoing face fluxes so outflow × dt ≤ the cell's volume, consistently for both cells sharing a face, and apply drain accounting to the limited fluxes. Keep a debug assert `h ≥ −1e-6`. Test: a sharp 8×8 box of 1.5 mm with default params, run 1.0 s; relative volume error (on canvas + drained) < 1e-6.
+  - [ ] _(audit round 1, finding 2)_ **Upwind** the in-plane gravity term: on each face, mobility for the `ρ·g∥` part uses `h` from the upwind cell (by the sign of g∥ on that face). Pressure terms keep the centered face mobility. Test: the existing tilt config, after 0.2 s; the center row has no interior local minimum deeper than 1e-3 between two higher values (no sawtooth).
+  - [ ] _(audit round 1, finding 3)_ Stability bounds from analysis: capillary `Δ⁴/(32·M·σ)`, hydrostatic `Δ²/(4·M·ρ·g⊥)`, advective wave speed `h²·ρ·|g∥|/μ`. Document `dtSafety ∈ (0,1]`. Test: a uniform 1 mm film + ±1% checkerboard, capillary only (g⊥ = g∥ = 0), `dtSafety = 0.9`, 200 substeps; the checkerboard amplitude decreases monotonically.
+  - [ ] _(audit round 1, finding 4)_ Fix the `gravityFromTilt` doc comment (tiltX > 0 means the canvas top tips down, so flow goes toward the canvas top = grid −y), and add a test pinning the sign of g∥ for ±tiltX and ±tiltY.
 - **Handoff notes:**
   - Grid fixes first: `maxAbsDiff` NaN-aware; `isMirrorSymmetric` false on non-finite pairs; `getCell`/`setCell` throw on non-integer indices (tests added).
   - `src/sim/cpu/thinFilm.ts`: file-header derivation in mm–g–s + explicit Δt limits (capillary Δ⁴, hydrostatic Δ², advective CFL); FV face fluxes; open-edge drain → `drainedVolume`; `thinFilmStep` auto-substeps via `maxStableDt`.
