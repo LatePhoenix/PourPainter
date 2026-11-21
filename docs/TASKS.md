@@ -216,7 +216,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (84 tests). No new dependencies. Explicit solver unchanged. Drain counter and hMax epoch still belong to M1-04.
 
 ### M1-06b Unconditionally convergent semi-implicit solve
-- **Status:** review ([audit round 1: changes addressed](audits/2026-11-21-M1-06b.md)). Branch `task/M1-06b-damped-jacobi`.
+- **Status:** todo ([audit round 2](audits/2026-11-21-M1-06b.md): fixes verified; the user chose 20 sweeps). Continue on the existing branch `task/M1-06b-damped-jacobi`.
 - **Depends on:** M1-06
 - **Goal:** Remove the ~75× divergence cliff found in the [M1-06 audit](audits/2026-11-21-M1-06.md), so the 64× cap really is just an accuracy limit.
 - **Acceptance criteria:**
@@ -230,6 +230,9 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [x] _(audit round 1, finding 2)_ The 200× and 1000× noise tests pass on the flux path. Hard requirements: finite, peak ≤ initial, volume (canvas + drained) within 1e-6. Noise std should decrease; if 1000× doesn't, report the numbers in the handoff notes.
   - [x] _(audit round 1, finding 3)_ **Pour-spike test:** a 1 mm Gaussian puddle (radius 8) plus a 3 mm spike (radius 1.5) at +6 cells; 64², dx = 300/512, default params, 0.25 s, dt = 64 × the current explicit capillary Δt. CPU semi vs explicit rel L∞ < 1%, and the corner height within 1e-6 of explicit. The same case is in the GPU "Compare to CPU" harness: GPU semi vs CPU semi < 1e-3.
   - [x] _(audit round 1, finding 4)_ The heavy semi tests get explicit timeouts (≥ 60 s), or are slimmed, so CI keeps headroom. Note the suite runtime in the handoff notes.
+  - [ ] _(audit round 2, user decision 2026-11-21)_ Set `SEMI_IMPLICIT_SWEEPS` back to **20** (CPU and GPU share it). This **supersedes** the 200×/1000× requirement above: replace those noise tests with one at **128×** the explicit capillary Δt (2× the scheduler cap), 60 steps. It must be finite, peak ≤ start, volume within 1e-6, std decreasing.
+  - [ ] _(audit round 2)_ Guard: `thinFilmSubstepSemiImplicit` and the GPU semi path reject (throw / assert in dev) any dt above `SEMI_IMPLICIT_ACCURACY_FACTOR` × the explicit capillary Δt of the current field, with a 10% tolerance for hint rounding. Add a test.
+  - [ ] _(audit round 2)_ Re-measure thick-film throughput at 512² in semi mode (right after reset), and once spread. Record FPS, substeps/frame and sim/wall in the handoff notes. Target: 60 fps / 1.00 sim-s/wall-s in both phases. Note the new suite runtime.
 - **Handoff notes:**
   - Removed `SEMI_IMPLICIT_FLUX_RESIDUAL_MM` and the CPU-only "keep h* + uniform shift + rescale" branch. Every step commits the limited flux form hⁿ − Δt ∇·(q_ex + q_cap(h*)), same as the GPU, then asserts h ≥ −1e-6 and clamps tiny negatives to 0. No residual threshold, no second commit path.
   - Damping derivation is unchanged at the top of `src/sim/cpu/thinFilmSemi.ts` (ρ(D⁻¹A) = 3.2, ω = 1/2 < 0.625, worst-mode factor 0.6). Sweep count is now **70** pairs (`SEMI_IMPLICIT_SWEEPS`), shared with the GPU. Twenty pairs contract the stiff mode but the flux commit multiplies the leftover by Δt a_ii. On the 1000× noise case that left peak 6.3 mm (start 1.20); 60 pairs still overshot at 1.35 mm; 70 pairs keep the peak at 1.14 mm. Std decreases at both 200× and 1000×, so there is no std-failure caveat. Volume (canvas + drained) stays within 1e-6.
