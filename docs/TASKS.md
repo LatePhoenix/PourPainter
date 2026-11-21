@@ -94,17 +94,24 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (37 tests).
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
-- **Status:** todo
+- **Status:** done ([audit](audits/2026-11-21-M0-03.md))
 - **Depends on:** M0-01
 - **Goal:** Get a GPU device and a canvas on screen, behind the interface the UI will use.
 - **Acceptance criteria:**
-  - [ ] `src/sim/gpu/device.ts`: requests an adapter/device and reports a clear error object if WebGPU is unavailable
-  - [ ] The app shows a friendly "WebGPU required (use Chrome or Edge)" message instead of crashing
-  - [ ] `SimController` interface in `src/sim/index.ts`: `init(canvas, settings)`, `start()`, `pause()`, `reset(seed)`, `step(n)`, `setTilt(x, y)`, `pointer(tool, event)`, `getStats()`, `dispose()`. Stubs are fine, but the types must be final-ish.
-  - [ ] A full-window canvas cleared to a canvas-white color each frame by a rAF loop owned by the controller
-  - [ ] Handles resize and device loss (logs and offers reload)
-  - [ ] _(from M0-02b audit)_ `src/sim/coords.ts`: `pointerToCanvas(event, canvasEl)` gives canvas-normalized coords, (0,0) bottom-left and y-up per the `ToolAction` docs. `canvasToTexel(x, y, gridN)` handles the y-flip for y-down textures. Unit tests cover the corners and center. `SimController.pointer` uses it.
+  - [x] `src/sim/gpu/device.ts`: requests an adapter/device and reports a clear error object if WebGPU is unavailable
+  - [x] The app shows a friendly "WebGPU required (use Chrome or Edge)" message instead of crashing
+  - [x] `SimController` interface in `src/sim/index.ts`: `init(canvas, settings)`, `start()`, `pause()`, `reset(seed)`, `step(n)`, `setTilt(x, y)`, `pointer(tool, event)`, `getStats()`, `dispose()`. Stubs are fine, but the types must be final-ish.
+  - [x] A full-window canvas cleared to a canvas-white color each frame by a rAF loop owned by the controller
+  - [x] Handles resize and device loss (logs and offers reload)
+  - [x] _(from M0-02b audit)_ `src/sim/coords.ts`: `pointerToCanvas(event, canvasEl)` gives canvas-normalized coords, (0,0) bottom-left and y-up per the `ToolAction` docs. `canvasToTexel(x, y, gridN)` handles the y-flip for y-down textures. Unit tests cover the corners and center. `SimController.pointer` uses it.
 - **Handoff notes:**
+  - `requestGpuDevice()` returns `{ok, error|value}` with codes `unsupported` / `no-adapter` / `request-failed` (Node test covers unsupported).
+  - `SimController` types in `src/sim/types.ts`; impl in `controller.ts` via `createSimController()`. rAF clear to canvas-white; `ResizeObserver` reconfigure; `device.lost` pauses, logs, and App shows Reload.
+  - App mounts a full-viewport canvas; friendly WebGPU overlay on init failure; device-lost overlay with reload.
+  - `coords.ts`: y-up canvas ↔ y-down texels; `pointer()` uses both. Corner/center unit tests.
+  - **Dependency:** `@webgpu/types` (dev) for GPU typings; referenced from `src/vite-env.d.ts`.
+  - Removed `isValidSeed` re-export from `src/sim/index.ts` (import from domain instead).
+  - `npm run check` (49 tests) and `npm run build` pass. WebGPU path needs Chrome/Edge to visually verify.
 
 ### M0-04 Ping-pong compute framework + debug readback
 - **Status:** todo
@@ -116,6 +123,8 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - [ ] Async readback helper (GPU → `Float32Array`) for debugging and comparisons
   - [ ] Demo pass: a compute shader that blurs a test pattern each frame, plus a render pass that shows the grid as a grayscale image
   - [ ] A dev-only debug overlay (toggle with backtick) that shows FPS, grid size and step count
+  - [ ] _(from M0-03 audit)_ `context.configure()` runs only at init and when the canvas pixel size actually changes, never every frame
+  - [ ] _(from M0-03 audit)_ `SimController.init` rechecks `disposed` after awaiting the device, and if disposed, destroys the device and returns without touching the canvas
 - **Handoff notes:**
 
 ### M0-05 CPU reference grid utilities
