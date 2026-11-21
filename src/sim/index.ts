@@ -1,2 +1,3 @@
 /** Simulation core entry. No React imports allowed. */
-export {};
+export type { Rng } from './rng';
+export { createRng } from './rng';

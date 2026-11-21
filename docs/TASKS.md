@@ -51,17 +51,39 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes (9 tests). No new runtime dependencies.
 
 ### M0-02 Domain types, physics constants, seeded RNG
-- **Status:** todo
+- **Status:** done ([audit](audits/2026-11-21-M0-02.md))
 - **Depends on:** M0-01
 - **Goal:** Pure data types that the sim and UI share.
 - **Acceptance criteria:**
-  - [ ] `src/domain/paint.ts`: `Paint` (id, name, rgb, density g/ml, mediumRatio, waterRatio, siliconeDrops) and a starter preset list of about 12 pigments with plausible relative densities (Titanium White heaviest, then the cadmium-style colors, with phthalos and quinacridones lighter)
-  - [ ] `src/domain/cup.ts`: `Cup` (type: single | split | funnel | colander | squeeze; ordered layers of {paintId, volume ml})
-  - [ ] `src/domain/recipe.ts`: `Recipe` (canvas size/shape, paints, cup, technique id, seed, recorded tool actions). JSON serialize/parse with a version field.
-  - [ ] `src/domain/physics.ts`: every physical constant and default (gravity, base viscosity, surface tension, silicone σ reduction, drying rate) with units in comments
-  - [ ] `src/sim/rng.ts`: a seeded PRNG (e.g. mulberry32 or PCG); test that the same seed gives the same sequence
-  - [ ] Unit tests for recipe round-trip
-  - [ ] _(from M0-01b audit)_ Add a `format:check` script (`prettier --check .`), include it in `check`, and run `npm run format` once so the repo is clean
+  - [x] `src/domain/paint.ts`: `Paint` (id, name, rgb, density g/ml, mediumRatio, waterRatio, siliconeDrops) and a starter preset list of about 12 pigments with plausible relative densities (Titanium White heaviest, then the cadmium-style colors, with phthalos and quinacridones lighter)
+  - [x] `src/domain/cup.ts`: `Cup` (type: single | split | funnel | colander | squeeze; ordered layers of {paintId, volume ml})
+  - [x] `src/domain/recipe.ts`: `Recipe` (canvas size/shape, paints, cup, technique id, seed, recorded tool actions). JSON serialize/parse with a version field.
+  - [x] `src/domain/physics.ts`: every physical constant and default (gravity, base viscosity, surface tension, silicone σ reduction, drying rate) with units in comments
+  - [x] `src/sim/rng.ts`: a seeded PRNG (e.g. mulberry32 or PCG); test that the same seed gives the same sequence
+  - [x] Unit tests for recipe round-trip
+  - [x] _(from M0-01b audit)_ Add a `format:check` script (`prettier --check .`), include it in `check`, and run `npm run format` once so the repo is clean
+- **Handoff notes:**
+  - Added `paint.ts` (12 presets, Ti white → cadmiums → earths → ultramarine/black → phthalos → quinacridones), `cup.ts`, `recipe.ts` (versioned JSON + typed tool actions), `physics.ts` (g, μ, σ, silicone σ cut, drying, tilt, temp coeffs; units in comments), `sim/rng.ts` (Mulberry32).
+  - Tests: recipe round-trip + reject bad version/actions; RNG determinism; preset density ordering.
+  - `format:check` added to `check`; ran `npm run format` (touched `eslint.config.js`, `recipe.ts`, `import-boundary.test.ts`). README Commands updated.
+  - Barrel exports updated in `src/domain/index.ts` and `src/sim/index.ts`. No new dependencies.
+  - `npm run check` passes (19 tests). Densities are plausible relative acrylic values, not lab SG — tune later against real pours if needed.
+
+### M0-02b Unit system, color space, seed and recipe validation
+- **Status:** todo
+- **Depends on:** M0-02
+- **Goal:** Fix the issues from [the M0-02 audit](audits/2026-11-21-M0-02.md) before any physics code uses `physics.ts`.
+- **Acceptance criteria:**
+  - [ ] `physics.ts` uses one consistent **mm–g–s** sim unit system, stated at the top of the file: length mm, mass g, time s. That gives pressure g/(mm·s²) = Pa, viscosity g/(mm·s) = Pa·s, surface tension g/s² = mN/m, density g/mm³.
+  - [ ] `SURFACE_TENSION` is expressed in mN/m (≈35), with the silicone and temperature coefficients converted to match; names say the unit (e.g. `SURFACE_TENSION_MN_M`)
+  - [ ] `Paint.density` stays g/ml for people; add `densityToSim(gPerMl) → g/mm³` (×1e-3) and use it wherever sim code needs ρ
+  - [ ] Test: capillary length `√(σ/(ρ·g))` with the defaults is 1.5–2.0 mm
+  - [ ] `Rgb` is documented as **sRGB 0–1**; add `srgbToLinear` in `src/domain` (or `src/render`) with a test at known points (0, 0.04045, 0.5, 1)
+  - [ ] `createRng` throws on a non-integer seed or one outside [0, 2³²); `parseRecipe` rejects such seeds
+  - [ ] Golden-value test: the first 5 `next()` outputs for seed 12345 are pinned
+  - [ ] `validateRecipe` (called by `parseRecipe`) rejects: empty or duplicate paint ids; cup layers or pour actions whose `paintId` isn't in `paints`; canvas width/height ≤ 0; volume ≤ 0; density ≤ 0; rgb outside [0,1]; negative ratios or silicone drops; negative or non-ascending `t`. One test per rule.
+  - [ ] Decide whether tool coordinates may fall outside [0,1], and document it in `ToolAction`'s comment
+  - [ ] `npm run check` passes
 - **Handoff notes:**
 
 ### M0-03 WebGPU bootstrap + SimController skeleton
@@ -106,7 +128,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 
 ### M1-01 CPU thin-film solver
 - **Status:** todo
-- **Depends on:** M0-02, M0-05
+- **Depends on:** M0-02b, M0-05
 - **Goal:** The reference physics, written for clarity.
 - **Acceptance criteria:**
   - [ ] Explicit finite-volume step for `∂h/∂t = -∇·q`, `q = -(h³/3μ)(∇p − ρ·g∥)`, where `p = ρ·g⊥·h − σ∇²h` and `g∥`/`g⊥` are the in-plane and normal parts of gravity for the current tilt (document the derivation in a comment, following PLAN §2.2)
@@ -155,7 +177,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
 ---
 
 ## Later milestones (to be specified)
-- **M2:** multi-color layer stack, BFECC advection, layered cup, flip cup and dirty pour
+- **M2:** multi-color layer stack, BFECC advection, layered cup, flip cup and dirty pour. Note from M0-02 audit: `CupLayer` needs a compartment/slot field for split cups.
 - **M3:** cells: density buoyancy, silicone + Marangoni, torch tool
 - **M4:** technique tools: swipe, air jet (Dutch/Bloom), string pull, puddle/tree-ring paths, presets
 - **M5:** drying, finish modes, PNG + time-lapse export

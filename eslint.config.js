@@ -5,7 +5,11 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-const simDomainRenderFiles = ['src/sim/**/*.{ts,tsx}', 'src/domain/**/*.{ts,tsx}', 'src/render/**/*.{ts,tsx}'];
+const simDomainRenderFiles = [
+  'src/sim/**/*.{ts,tsx}',
+  'src/domain/**/*.{ts,tsx}',
+  'src/render/**/*.{ts,tsx}',
+];
 
 export default tseslint.config(
   {
