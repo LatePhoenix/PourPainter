@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createSimController, SimControllerError, type GpuInitError } from '../sim';
+import { createSimController, SimControllerError, type GpuInitError, type SimStats } from '../sim';
 import styles from './App.module.css';
 
 type BootState =
@@ -9,10 +9,27 @@ type BootState =
   | { status: 'lost'; message: string };
 
 const DEFAULT_SEED = 1;
+const IS_DEV = import.meta.env.DEV;
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [boot, setBoot] = useState<BootState>({ status: 'booting' });
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [stats, setStats] = useState<SimStats | null>(null);
+
+  useEffect(() => {
+    if (!IS_DEV) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === '`' || event.code === 'Backquote') {
+        event.preventDefault();
+        setDebugOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -39,16 +56,18 @@ export function App() {
         canvas.addEventListener('pointermove', onPointer);
         canvas.addEventListener('pointerdown', onPointer);
         setBoot({ status: 'ready' });
+        setStats(controller.getStats());
 
         statsTimer = window.setInterval(() => {
-          const stats = controller.getStats();
-          if (stats.deviceLost) {
+          const next = controller.getStats();
+          setStats(next);
+          if (next.deviceLost) {
             setBoot({
               status: 'lost',
-              message: stats.deviceLostMessage ?? 'WebGPU device was lost.',
+              message: next.deviceLostMessage ?? 'WebGPU device was lost.',
             });
           }
-        }, 500);
+        }, 250);
       } catch (error) {
         if (cancelled) {
           return;
@@ -100,6 +119,21 @@ export function App() {
             Reload
           </button>
         </div>
+      ) : null}
+
+      {IS_DEV && debugOpen && stats ? (
+        <aside className={styles.debug} aria-label="Sim debug overlay">
+          <div>FPS {stats.fps.toFixed(0)}</div>
+          <div>
+            Grid {stats.gridSize}×{stats.gridSize}
+          </div>
+          <div>Steps {stats.stepCount}</div>
+          <div className={styles.debugHint}>` to hide</div>
+        </aside>
+      ) : null}
+
+      {IS_DEV && boot.status === 'ready' && !debugOpen ? (
+        <div className={styles.debugHintCorner}>` debug</div>
       ) : null}
     </div>
   );

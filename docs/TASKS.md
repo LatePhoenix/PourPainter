@@ -114,18 +114,24 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` (49 tests) and `npm run build` pass. WebGPU path needs Chrome/Edge to visually verify.
 
 ### M0-04 Ping-pong compute framework + debug readback
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M0-03
 - **Goal:** Reusable plumbing for grid compute passes.
 - **Acceptance criteria:**
-  - [ ] Helper for a named ping-pong pair of storage textures or buffers at grid resolution N×N (N configurable: 256/512/1024)
-  - [ ] Helper to build a compute pipeline from a WGSL file plus a typed uniform struct
-  - [ ] Async readback helper (GPU → `Float32Array`) for debugging and comparisons
-  - [ ] Demo pass: a compute shader that blurs a test pattern each frame, plus a render pass that shows the grid as a grayscale image
-  - [ ] A dev-only debug overlay (toggle with backtick) that shows FPS, grid size and step count
-  - [ ] _(from M0-03 audit)_ `context.configure()` runs only at init and when the canvas pixel size actually changes, never every frame
-  - [ ] _(from M0-03 audit)_ `SimController.init` rechecks `disposed` after awaiting the device, and if disposed, destroys the device and returns without touching the canvas
+  - [x] Helper for a named ping-pong pair of storage textures or buffers at grid resolution N×N (N configurable: 256/512/1024)
+  - [x] Helper to build a compute pipeline from a WGSL file plus a typed uniform struct
+  - [x] Async readback helper (GPU → `Float32Array`) for debugging and comparisons
+  - [x] Demo pass: a compute shader that blurs a test pattern each frame, plus a render pass that shows the grid as a grayscale image
+  - [x] A dev-only debug overlay (toggle with backtick) that shows FPS, grid size and step count
+  - [x] _(from M0-03 audit)_ `context.configure()` runs only at init and when the canvas pixel size actually changes, never every frame
+  - [x] _(from M0-03 audit)_ `SimController.init` rechecks `disposed` after awaiting the device, and if disposed, destroys the device and returns without touching the canvas
 - **Handoff notes:**
+  - GPU plumbing: `pingPong.ts` (`heightA`/`heightB` r32float), `uniforms.ts` (`packUniforms` / `createComputePipelineFromWgsl` / `createUniformBuffer`), `readback.ts` (`readTextureToFloat32`, `readBufferToFloat32`, 256-byte row align).
+  - Demo: `blur.wgsl` 3×3 box blur + `blit_grayscale.wgsl`; `demoBlur.ts` seeds a disk/checker pattern; controller runs blur+blit each frame; `step(n)` runs N blurs immediately.
+  - Dev overlay in `App.tsx` (`import.meta.env.DEV`): backtick toggles FPS / grid / step count.
+  - M0-03 fixes: `configureContext` only on init/size change (no per-frame configure); `init` destroys device and returns if `disposed` after await.
+  - Unit tests: uniform packing, row alignment, test pattern. Full GPU path needs Chrome/Edge (not exercised in Vitest).
+  - `npm run check` (53 tests) and `npm run build` pass. No new dependencies.
 
 ### M0-05 CPU reference grid utilities
 - **Status:** todo
