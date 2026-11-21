@@ -255,6 +255,7 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - Local before (vitest, 20 sweeps): file 43.3 s; 64× test 13.7 s (explicit 10.4 s, semi 0.66 s); pour spike 28.2 s (explicit 21.3 s, semi 0.75 s). CI before, run #43 on main @ a2dc65d: file 72.7 s, 64× 23.2 s, pour spike 45.2 s. Local after (`npm run check`): file **2.58 s**; 64× **0.58 s**; pour spike **0.67 s**. Longest remaining test is the ripple case at 0.80 s (one solver call, not a stepped test loop). Full check wall ~7 s.
   - The 64× and pour-spike loops `await` `setImmediate` every 8 semi steps, so a slow runner can still service `onTaskUpdate` during those solves. No other test in the file is expected to run longer than 1 s.
   - `actions/checkout` and `actions/setup-node` are v5. `npm run check` passes. No new dependencies. Solver code unchanged.
+  - CI: run **#45** success on `40e0081` (https://github.com/LatePhoenix/PourPainter/actions/runs/44926250179). Two more runs follow on this branch.
 
 ### M1-03 Tilt control
 - **Status:** todo
