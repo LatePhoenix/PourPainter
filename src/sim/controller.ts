@@ -1,25 +1,26 @@
+import { DEFAULT_CELL_SIZE_MM, GRAVITY_MM_S2 } from '../domain/physics';
 import { isValidSeed } from '../domain/seed';
 import { canvasToTexel, pointerToCanvas, type CanvasPoint } from './coords';
-import {
-  createBlurDemo,
-  encodeBlitPass,
-  encodeBlurPass,
-  resetBlurDemoPattern,
-  type BlurDemoResources,
-} from './gpu/demoBlur';
+import { gravityFromTilt, DEFAULT_THIN_FILM_PARAMS } from './cpu/thinFilm';
 import { requestGpuDevice, type GpuInitError } from './gpu/device';
+import { createThinFilmGpu, type ThinFilmGpuResources } from './gpu/thinFilmGpu';
 import { createRng } from './rng';
 import type {
+  CompareToCpuResult,
   GridSize,
   SimController,
   SimPointerEvent,
   SimSettings,
   SimStats,
   SimTool,
+  UniformRoundTripResult,
 } from './types';
 
 /** Acrylic canvas white as sRGB values for non-sRGB `*8unorm` swapchain clears. */
 const CANVAS_WHITE = { r: 0.96, g: 0.94, b: 0.9, a: 1 };
+
+/** Wall-clock frame budget used as the requested sim dt before the substep cap. */
+const FRAME_SIM_DT = 1 / 60;
 
 export class SimControllerError extends Error {
   readonly gpuError?: GpuInitError;
@@ -59,7 +60,15 @@ class SimControllerImpl implements SimController {
   private resizeObserver: ResizeObserver | null = null;
   private disposed = false;
   private contextConfigured = false;
-  private demo: BlurDemoResources | null = null;
+  private film: ThinFilmGpuResources | null = null;
+  private gpuDeviceName: string | null = null;
+  private compareRelative: number | null = null;
+  private compareMaxAbs: number | null = null;
+  private uniformRoundTripOk: boolean | null = null;
+  private simSecondsPerWallSecond = 0;
+  private lastFrameTs: number | null = null;
+  private throughputSim = 0;
+  private throughputWallMs = 0;
 
   async init(canvas: HTMLCanvasElement, settings: SimSettings): Promise<void> {
     if (this.disposed) {
@@ -83,7 +92,7 @@ class SimControllerImpl implements SimController {
       throw new SimControllerError(result.error.message, result.error);
     }
 
-    const { device } = result.value;
+    const { device, adapter } = result.value;
     const context = canvas.getContext('webgpu');
     if (!context) {
       device.destroy();
@@ -97,8 +106,19 @@ class SimControllerImpl implements SimController {
     this.format = format;
     this.seed = settings.seed;
     this.gridSize = settings.gridSize ?? 512;
+    const info = 'info' in adapter ? adapter.info : undefined;
+    this.gpuDeviceName =
+      (info && (info.device || info.description || info.vendor)) || 'WebGPU adapter';
     createRng(this.seed);
-    this.demo = createBlurDemo(device, format, this.gridSize);
+
+    const dx = DEFAULT_CELL_SIZE_MM * (512 / this.gridSize);
+    this.film = createThinFilmGpu(device, format, this.gridSize, this.gridSize, {
+      ...DEFAULT_THIN_FILM_PARAMS,
+      dx,
+      gParallelX: 0,
+      gParallelY: 0,
+      gPerp: GRAVITY_MM_S2,
+    });
 
     this.configureContext();
     this.attachResize();
@@ -138,9 +158,12 @@ class SimControllerImpl implements SimController {
     this.lastPointer = null;
     this.lastTool = null;
     this.lastTexel = null;
-    if (this.device && this.demo) {
-      resetBlurDemoPattern(this.device, this.demo);
-    }
+    this.simSecondsPerWallSecond = 0;
+    this.lastFrameTs = null;
+    this.throughputSim = 0;
+    this.throughputWallMs = 0;
+    this.applyTiltToParams();
+    this.film?.resetPuddle();
   }
 
   step(n: number): void {
@@ -149,21 +172,20 @@ class SimControllerImpl implements SimController {
       throw new SimControllerError('step count must be a non-negative finite number');
     }
     const count = Math.floor(n);
-    if (count === 0 || !this.device || !this.demo || this.deviceLost) {
+    if (count === 0 || !this.device || !this.film || this.deviceLost) {
       return;
     }
     const encoder = this.device.createCommandEncoder({ label: 'manual-steps' });
-    for (let i = 0; i < count; i += 1) {
-      encodeBlurPass(encoder, this.demo, this.device);
-    }
+    this.film.encodeFrame(encoder, count * FRAME_SIM_DT);
     this.device.queue.submit([encoder.finish()]);
-    this.stepCount += count;
+    this.stepCount += this.film.lastSubsteps;
   }
 
   setTilt(x: number, y: number): void {
     this.assertReady();
     this.tiltX = x;
     this.tiltY = y;
+    this.applyTiltToParams();
   }
 
   pointer(tool: SimTool, event: SimPointerEvent): void {
@@ -192,15 +214,42 @@ class SimControllerImpl implements SimController {
       lastTool: this.lastTool,
       deviceLost: this.deviceLost,
       deviceLostMessage: this.deviceLostMessage,
+      substepsLastFrame: this.film?.lastSubsteps ?? 0,
+      simSecondsPerWallSecond: this.simSecondsPerWallSecond,
+      gpuDeviceName: this.gpuDeviceName,
+      compareRelative: this.compareRelative,
+      compareMaxAbs: this.compareMaxAbs,
+      uniformRoundTripOk: this.uniformRoundTripOk,
     };
+  }
+
+  async compareToCpu(steps = 100): Promise<CompareToCpuResult> {
+    this.assertReady();
+    if (!this.film) {
+      throw new SimControllerError('Controller is not initialized');
+    }
+    const result = await this.film.compareToCpu(steps);
+    this.compareRelative = result.relative;
+    this.compareMaxAbs = result.maxAbsDiff;
+    return result;
+  }
+
+  async checkUniformRoundTrip(): Promise<UniformRoundTripResult> {
+    this.assertReady();
+    if (!this.film) {
+      throw new SimControllerError('Controller is not initialized');
+    }
+    const result = await this.film.checkUniformRoundTrip();
+    this.uniformRoundTripOk = result.ok;
+    return result;
   }
 
   dispose(): void {
     this.pause();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.demo?.destroy();
-    this.demo = null;
+    this.film?.destroy();
+    this.film = null;
     this.device?.destroy();
     this.device = null;
     this.context = null;
@@ -210,16 +259,25 @@ class SimControllerImpl implements SimController {
     this.disposed = true;
   }
 
+  private applyTiltToParams(): void {
+    if (!this.film) {
+      return;
+    }
+    const g = gravityFromTilt(this.tiltX, this.tiltY);
+    this.film.simParams.gParallelX = g.gParallelX;
+    this.film.simParams.gParallelY = g.gParallelY;
+    this.film.simParams.gPerp = g.gPerp;
+  }
+
   private assertReady(): void {
     if (this.disposed) {
       throw new SimControllerError('Controller was disposed');
     }
-    if (!this.canvas || !this.device || !this.context || !this.format || !this.demo) {
+    if (!this.canvas || !this.device || !this.context || !this.format || !this.film) {
       throw new SimControllerError('Controller is not initialized');
     }
   }
 
-  /** Configure the swapchain only at init and when the canvas pixel size changes. */
   private configureContext(): void {
     if (!this.canvas || !this.device || !this.context || !this.format) {
       return;
@@ -267,17 +325,17 @@ class SimControllerImpl implements SimController {
 
   private frame(timestamp: number): void {
     this.rafId = null;
-    if (!this.running || this.deviceLost || !this.device || !this.context || !this.demo) {
+    if (!this.running || this.deviceLost || !this.device || !this.context || !this.film) {
       this.running = false;
       return;
     }
 
     const encoder = this.device.createCommandEncoder({ label: 'frame' });
-    encodeBlurPass(encoder, this.demo, this.device);
-    this.stepCount += 1;
+    const { substeps, simDt } = this.film.encodeFrame(encoder, FRAME_SIM_DT);
+    this.stepCount += substeps;
 
     const swapView = this.context.getCurrentTexture().createView();
-    encodeBlitPass(encoder, this.demo, this.device, swapView, CANVAS_WHITE);
+    this.film.encodeBlit(encoder, swapView, CANVAS_WHITE);
     this.device.queue.submit([encoder.finish()]);
 
     this.frameCount += 1;
@@ -288,6 +346,17 @@ class SimControllerImpl implements SimController {
       this.fpsFrames = 0;
       this.fpsLastTs = timestamp;
     }
+
+    if (this.lastFrameTs !== null) {
+      this.throughputSim += simDt;
+      this.throughputWallMs += timestamp - this.lastFrameTs;
+      if (this.throughputWallMs >= 500) {
+        this.simSecondsPerWallSecond = this.throughputSim / (this.throughputWallMs / 1000);
+        this.throughputSim = 0;
+        this.throughputWallMs = 0;
+      }
+    }
+    this.lastFrameTs = timestamp;
 
     this.rafId = requestAnimationFrame((ts) => this.frame(ts));
   }

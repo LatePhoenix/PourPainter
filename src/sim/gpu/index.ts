@@ -9,9 +9,22 @@ export {
 } from './demoBlur';
 export type { GpuInitError, GpuInitErrorCode, GpuInitResult, GpuInitSuccess } from './device';
 export { requestGpuDevice } from './device';
+export {
+  FLOW_PARAMS_FIELDS,
+  MAX_SUBSTEPS_PER_FRAME,
+  flowParamsFromThinFilm,
+  flowParamsUniformRecord,
+  maxStableDtFromHMax,
+} from './flowParams';
 export type { PingPongTextures } from './pingPong';
 export { createPingPongTextures } from './pingPong';
 export { alignedBytesPerRow, readBufferToFloat32, readTextureToFloat32 } from './readback';
+export type {
+  ThinFilmGpuCompareResult,
+  ThinFilmGpuResources,
+  ThinFilmGpuRoundTripResult,
+} from './thinFilmGpu';
+export { createThinFilmGpu } from './thinFilmGpu';
 export type {
   ComputePipelineFromWgslOptions,
   UniformField,
@@ -24,4 +37,12 @@ export {
   packUniforms,
   uniformStructSize,
 } from './uniforms';
-export { BLIT_GRAYSCALE_WGSL, BLUR_WGSL, PLACEHOLDER_WGSL } from './wgslRaw';
+export {
+  BLIT_GRAYSCALE_WGSL,
+  BLIT_HEIGHT_WGSL,
+  BLUR_WGSL,
+  FLOW_FLUX_WGSL,
+  FLOW_UPDATE_WGSL,
+  FLOW_UNIFORMS_ROUNDTRIP_WGSL,
+  PLACEHOLDER_WGSL,
+} from './wgslRaw';

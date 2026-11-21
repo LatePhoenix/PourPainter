@@ -13,9 +13,11 @@ const IS_DEV = import.meta.env.DEV;
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const controllerRef = useRef<ReturnType<typeof createSimController> | null>(null);
   const [boot, setBoot] = useState<BootState>({ status: 'booting' });
   const [debugOpen, setDebugOpen] = useState(false);
   const [stats, setStats] = useState<SimStats | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!IS_DEV) {
@@ -38,6 +40,7 @@ export function App() {
     }
 
     const controller = createSimController();
+    controllerRef.current = controller;
     let cancelled = false;
     let statsTimer: number | undefined;
 
@@ -89,8 +92,33 @@ export function App() {
       canvas.removeEventListener('pointermove', onPointer);
       canvas.removeEventListener('pointerdown', onPointer);
       controller.dispose();
+      controllerRef.current = null;
     };
   }, []);
+
+  const runCompare = () => {
+    const controller = controllerRef.current;
+    if (!controller || busy) {
+      return;
+    }
+    setBusy(true);
+    void controller
+      .compareToCpu(100)
+      .then(() => setStats(controller.getStats()))
+      .finally(() => setBusy(false));
+  };
+
+  const runRoundTrip = () => {
+    const controller = controllerRef.current;
+    if (!controller || busy) {
+      return;
+    }
+    setBusy(true);
+    void controller
+      .checkUniformRoundTrip()
+      .then(() => setStats(controller.getStats()))
+      .finally(() => setBusy(false));
+  };
 
   return (
     <div className={styles.shell}>
@@ -128,6 +156,26 @@ export function App() {
             Grid {stats.gridSize}×{stats.gridSize}
           </div>
           <div>Steps {stats.stepCount}</div>
+          <div>Substeps/frame {stats.substepsLastFrame}</div>
+          <div>Sim/wall {stats.simSecondsPerWallSecond.toExponential(2)} s/s</div>
+          <div className={styles.debugMuted}>{stats.gpuDeviceName ?? 'GPU?'}</div>
+          {stats.compareRelative !== null ? (
+            <div>
+              CPU Δ {stats.compareMaxAbs?.toExponential(2)} (rel{' '}
+              {stats.compareRelative.toExponential(2)})
+            </div>
+          ) : null}
+          {stats.uniformRoundTripOk !== null ? (
+            <div>Uniforms {stats.uniformRoundTripOk ? 'ok' : 'FAIL'}</div>
+          ) : null}
+          <div className={styles.debugActions}>
+            <button type="button" disabled={busy} onClick={runCompare}>
+              Compare to CPU
+            </button>
+            <button type="button" disabled={busy} onClick={runRoundTrip}>
+              Uniform round-trip
+            </button>
+          </div>
           <div className={styles.debugHint}>` to hide</div>
         </aside>
       ) : null}

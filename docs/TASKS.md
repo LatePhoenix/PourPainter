@@ -177,16 +177,21 @@ Only the current and next milestone are fully specified. Later ones get filled i
   - `npm run check` passes. No new dependencies. ADR 0003 / M1-06 still pending user OK (audit finding 5).
 
 ### M1-02 GPU thin-film flow
-- **Status:** todo
+- **Status:** review
 - **Depends on:** M0-04, M1-01
 - **Goal:** Port M1-01 to WGSL compute passes.
 - **Acceptance criteria:**
-  - [ ] Flux pass + height-update pass (ping-pong), with parameters from uniforms
-  - [ ] Debug-overlay button "Compare to CPU": runs 100 steps on a 64×64 grid on both and shows the max abs difference (target < 1e-3 relative)
-  - [ ] _(changed per ADR 0003)_ Report throughput instead of requiring 60 fps: the debug overlay shows substeps per frame and **sim-seconds per wall-second** at 512² with default paint params. Record the numbers and the GPU model in the handoff notes. Explicit substeps are capped per frame, so the UI stays responsive (the sim runs slower than real time instead of freezing).
-  - [ ] _(from M0-04 audit)_ Ping-pong bind groups are built once (A→B and B→A) and chosen by parity. No `createBindGroup` in the per-frame or per-substep path.
-  - [ ] _(from M0-04 audit)_ Uniform layout round-trip check: a tiny compute pass copies every field of the flow-parameter uniform struct into a storage buffer, it's read back, and it's compared with `packUniforms` input. Runs from the same debug-overlay harness as "Compare to CPU".
+  - [x] Flux pass + height-update pass (ping-pong), with parameters from uniforms
+  - [x] Debug-overlay button "Compare to CPU": runs 100 steps on a 64×64 grid on both and shows the max abs difference (target < 1e-3 relative)
+  - [x] _(changed per ADR 0003)_ Report throughput instead of requiring 60 fps: the debug overlay shows substeps per frame and **sim-seconds per wall-second** at 512² with default paint params. Record the numbers and the GPU model in the handoff notes. Explicit substeps are capped per frame, so the UI stays responsive (the sim runs slower than real time instead of freezing).
+  - [x] _(from M0-04 audit)_ Ping-pong bind groups are built once (A→B and B→A) and chosen by parity. No `createBindGroup` in the per-frame or per-substep path.
+  - [x] _(from M0-04 audit)_ Uniform layout round-trip check: a tiny compute pass copies every field of the flow-parameter uniform struct into a storage buffer, it's read back, and it's compared with `packUniforms` input. Runs from the same debug-overlay harness as "Compare to CPU".
 - **Handoff notes:**
+  - Exact M1-01 port in WGSL: `flow_flux.wgsl` + `flow_update.wgsl` (centered pressure mobility, upwind g∥, Neumann exterior pressure, gravity-only edge drain, donor α limiter). Params via `FlowParams` uniforms (`flowParams.ts`).
+  - `createThinFilmGpu`: height ping-pong; flux/update/blit bind groups built once (A/B parity); `MAX_SUBSTEPS_PER_FRAME = 64`. Controller replaces the blur demo with the thin-film loop; debug overlay (`): Compare to CPU, Uniform round-trip, substeps/frame, sim/wall.
+  - CPU↔GPU compare quantizes the CPU field to f32 before `maxAbsDiff` (closes the M1-01 Discovered note).
+  - Verified in Chrome: **GPU vendor nvidia**; 512² default params → **64 substeps/frame**, **~1.21e-2 sim-s / wall-s**, UI 60 fps; Compare to CPU (100×64²) **rel Δ ≈ 1.7e-7** (≪ 1e-3); uniform round-trip **ok**.
+  - `npm run check` passes (77 tests). No new dependencies. Semi-implicit capillary remains M1-06 (ADR 0003).
 
 ### M1-06 Semi-implicit capillary step (ADR 0003)
 - **Status:** todo
@@ -249,4 +254,4 @@ _Implementers: add work found mid-task here (one line each). Don't do it in the 
 - _(M0-02b audit)_ `serializeRecipe` should call `validateRecipe`, so the app can't save a recipe it would refuse to load. Do it when the save/gallery flow is built (M6) or sooner if convenient.
 - _(M0-04 audit)_ `readBufferToFloat32` should check `buffer.usage & GPUBufferUsage.COPY_SRC` and throw a clear error (right now it raises a GPU validation error). Document that requirement on the helper.
 - _(M1-01 audit r2)_ Bump `actions/checkout` and `actions/setup-node` to v5 in `.github/workflows/check.yml` (v4 targets the deprecated Node 20 runtime).
-- _(M1-01 audit fix)_ M0-05 specified `Grid2D` as Float32 for GPU parity; M1-01 needed Float64 for 1e-6 conservation on long explicit runs. Confirm in M1-02 whether CPU↔GPU compares should quantize the CPU field to f32 before diffing.
+- _(M1-01 audit fix, resolved in M1-02)_ CPU↔GPU compares quantize the CPU `Grid2D` (Float64) to f32 before `maxAbsDiff`.
