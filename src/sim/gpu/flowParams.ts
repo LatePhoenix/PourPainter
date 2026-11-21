@@ -116,3 +116,37 @@ export const HMAX_READBACK_INTERVAL_FRAMES = 10;
 
 /** Safety margin applied to GPU-measured hMax before using it for Δt. */
 export const HMAX_SAFETY_MARGIN = 1.1;
+
+/**
+ * Semi-implicit Δt from hMax: hydrostatic, advective, and
+ * `accuracyFactor` × the explicit capillary bound. No bare Δ⁴ stability limit.
+ */
+export function maxStableDtSemiImplicitFromHMax(
+  hMax: number,
+  params: ThinFilmParams,
+  accuracyFactor: number,
+): number {
+  const { mu, sigma, rho, dx, gParallelX, gParallelY, gPerp, hMin, dtSafety } = params;
+  if (!(dx > 0) || !(mu > 0)) {
+    throw new RangeError('dx and mu must be positive');
+  }
+  if (!(dtSafety > 0) || dtSafety > 1) {
+    throw new RangeError('dtSafety must be in (0, 1]');
+  }
+  const h = Math.max(hMax, hMin);
+  const M = (h * h * h) / (3 * mu);
+  const dtCap =
+    sigma > 0
+      ? (accuracyFactor * (dx * dx * dx * dx)) / (32 * M * sigma)
+      : Number.POSITIVE_INFINITY;
+  const dtGrav =
+    rho > 0 && gPerp !== 0 ? (dx * dx) / (4 * M * rho * Math.abs(gPerp)) : Number.POSITIVE_INFINITY;
+  const gPar = Math.hypot(gParallelX, gParallelY);
+  const waveSpeed = (h * h * rho * gPar) / mu;
+  const dtAdv = waveSpeed > 0 ? dx / waveSpeed : Number.POSITIVE_INFINITY;
+  const dt = dtSafety * Math.min(dtCap, dtGrav, dtAdv);
+  if (!Number.isFinite(dt) || dt <= 0) {
+    return dtSafety * 1e-3;
+  }
+  return dt;
+}

@@ -12,11 +12,14 @@ export type CompareCaseResult = {
   ok: boolean;
 };
 
+export type FlowMode = 'explicit' | 'semi';
+
 export type CompareToCpuResult = {
   level: CompareCaseResult;
   mixedDt: CompareCaseResult;
   tilted: CompareCaseResult;
-  /** Worst relative height error across cases (overlay summary). */
+  semi: CompareCaseResult;
+  /** Worst relative height error across explicit cases (overlay summary). */
   relative: number;
   maxAbsDiff: number;
   steps: number;
@@ -73,6 +76,8 @@ export type SimStats = {
   compareMixedRel: number | null;
   compareTiltRel: number | null;
   compareTiltDrainRel: number | null;
+  compareSemiRel: number | null;
+  flowMode: FlowMode;
   /** Last uniform round-trip result, if run. */
   uniformRoundTripOk: boolean | null;
 };
@@ -91,8 +96,9 @@ export type SimController = {
   pointer(tool: SimTool, event: SimPointerEvent): void;
   getStats(): SimStats;
   dispose(): void;
-  /** Debug: 64² CPU↔GPU compare (level + mixed-dt + tilted). */
+  /** Debug: 64² CPU↔GPU compare (explicit cases + semi-implicit). */
   compareToCpu(steps?: number): Promise<CompareToCpuResult>;
+  setFlowMode(mode: FlowMode): void;
   /** Debug: packUniforms ↔ WGSL FlowParams round-trip. */
   checkUniformRoundTrip(): Promise<UniformRoundTripResult>;
 };

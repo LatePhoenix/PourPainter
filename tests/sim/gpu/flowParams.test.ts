@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_THIN_FILM_PARAMS, maxStableDt } from '../../../src/sim/cpu/thinFilm';
+import {
+  SEMI_IMPLICIT_ACCURACY_FACTOR,
+  maxStableDtSemiImplicit,
+} from '../../../src/sim/cpu/thinFilmSemi';
 import { createGrid2D } from '../../../src/sim/cpu/grid';
 import {
   FLOW_PARAMS_FIELDS,
@@ -9,6 +13,7 @@ import {
   flowParamsFromThinFilm,
   flowParamsUniformRecord,
   maxStableDtFromHMax,
+  maxStableDtSemiImplicitFromHMax,
 } from '../../../src/sim/gpu/flowParams';
 import { packUniforms, uniformStructSize } from '../../../src/sim/gpu/uniforms';
 
@@ -28,6 +33,16 @@ describe('flowParams', () => {
     const params = { ...DEFAULT_THIN_FILM_PARAMS, dx: 1, dtSafety: 0.5 };
     const grid = createGrid2D(8, 8, 1.25);
     expect(maxStableDtFromHMax(1.25, params)).toBeCloseTo(maxStableDt(grid, params), 12);
+  });
+
+  it('matches the CPU semi-implicit timestep (no bare capillary bound)', () => {
+    const p = { ...DEFAULT_THIN_FILM_PARAMS, dx: 1, dtSafety: 0.5 };
+    const grid = createGrid2D(8, 8, 1.25);
+    expect(maxStableDtSemiImplicitFromHMax(1.25, p, SEMI_IMPLICIT_ACCURACY_FACTOR)).toBeCloseTo(
+      maxStableDtSemiImplicit(grid, p),
+      12,
+    );
+    expect(maxStableDtSemiImplicit(grid, p)).toBeGreaterThan(maxStableDt(grid, p) * 10);
   });
 
   it('sizes the uniform ring for dynamic offsets and mixed-dt compares', () => {

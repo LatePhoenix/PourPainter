@@ -1,5 +1,11 @@
 import { createGrid2D, maxAbsDiff } from '../cpu/grid';
 import {
+  SEMI_IMPLICIT_ACCURACY_FACTOR,
+  SEMI_IMPLICIT_SWEEPS,
+  explicitCapillaryDt,
+  thinFilmSubstepSemiImplicit,
+} from '../cpu/thinFilmSemi';
+import {
   addGaussianPuddle,
   createThinFilmState,
   DEFAULT_THIN_FILM_PARAMS,
@@ -10,6 +16,10 @@ import {
 import blitHeightWgsl from '../shaders/blit_height.wgsl?raw';
 import flowFluxWgsl from '../shaders/flow_flux.wgsl?raw';
 import flowHmaxWgsl from '../shaders/flow_hmax.wgsl?raw';
+import flowSemiAssembleWgsl from '../shaders/flow_semi_assemble.wgsl?raw';
+import flowSemiExplicitWgsl from '../shaders/flow_semi_explicit.wgsl?raw';
+import flowSemiGsWgsl from '../shaders/flow_semi_gs.wgsl?raw';
+import flowSemiSeedWgsl from '../shaders/flow_semi_seed.wgsl?raw';
 import flowUpdateWgsl from '../shaders/flow_update.wgsl?raw';
 import flowRoundtripWgsl from '../shaders/flow_uniforms_roundtrip.wgsl?raw';
 import {
@@ -22,6 +32,7 @@ import {
   flowParamsFromThinFilm,
   flowParamsUniformRecord,
   maxStableDtFromHMax,
+  maxStableDtSemiImplicitFromHMax,
 } from './flowParams';
 import { readBufferToFloat32, readTextureToFloat32 } from './readback';
 import {
@@ -54,12 +65,16 @@ export type ThinFilmGpuCaseResult = {
   ok: boolean;
 };
 
+export type ThinFilmFlowMode = 'explicit' | 'semi';
+
 export type ThinFilmGpuCompareResult = {
   /** Level canvas, equal dt (legacy single-number summary = this case). */
   level: ThinFilmGpuCaseResult;
   mixedDt: ThinFilmGpuCaseResult;
   tilted: ThinFilmGpuCaseResult;
-  /** Convenience: worst relative height error across cases. */
+  /** Semi-implicit vs CPU semi-implicit reference. */
+  semi: ThinFilmGpuCaseResult;
+  /** Convenience: worst relative height error across explicit cases. */
   relative: number;
   maxAbsDiff: number;
   steps: number;
@@ -76,6 +91,8 @@ export type ThinFilmGpuResources = {
   readonly width: number;
   readonly height: number;
   simParams: ThinFilmParams;
+  /** Explicit M1-02 step, or semi-implicit capillary (ADR 0003). */
+  flowMode: ThinFilmFlowMode;
   hMaxHint: number;
   drainedVolume: number;
   lastSubsteps: number;
@@ -256,6 +273,92 @@ export function createThinFilmGpu(
     layout: device.createPipelineLayout({ bindGroupLayouts: [hMaxLayout] }),
   });
 
+  const iterateBuffer = device.createBuffer({
+    label: 'thinFilm-iterate',
+    size: width * height * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  const semiExplicitPipeline = createComputePipelineFromWgsl(device, flowSemiExplicitWgsl, {
+    label: 'thinFilm-semi-explicit',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [fluxLayout] }),
+  });
+  const seedLayout = device.createBindGroupLayout({
+    label: 'thinFilm-semi-seed-bgl',
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: FLOW_PARAMS_BYTES },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: 'read-only', format: 'r32float' },
+      },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    ],
+  });
+  const gsLayout = device.createBindGroupLayout({
+    label: 'thinFilm-semi-gs-bgl',
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: FLOW_PARAMS_BYTES },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: 'read-only', format: 'r32float' },
+      },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    ],
+  });
+  const assembleLayout = device.createBindGroupLayout({
+    label: 'thinFilm-semi-assemble-bgl',
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: FLOW_PARAMS_BYTES },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: 'read-only', format: 'r32float' },
+      },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: 'write-only', format: 'r32float' },
+      },
+      { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+      { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    ],
+  });
+  const semiSeedPipeline = createComputePipelineFromWgsl(device, flowSemiSeedWgsl, {
+    label: 'thinFilm-semi-seed',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [seedLayout] }),
+  });
+  const semiGsEven = createComputePipelineFromWgsl(device, flowSemiGsWgsl, {
+    label: 'thinFilm-semi-gs-even',
+    entryPoint: 'sweep_even',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [gsLayout] }),
+  });
+  const semiGsOdd = createComputePipelineFromWgsl(device, flowSemiGsWgsl, {
+    label: 'thinFilm-semi-gs-odd',
+    entryPoint: 'sweep_odd',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [gsLayout] }),
+  });
+  const semiAssemblePipeline = createComputePipelineFromWgsl(device, flowSemiAssembleWgsl, {
+    label: 'thinFilm-semi-assemble',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [assembleLayout] }),
+  });
+
   const ringBinding = { buffer: uniformRing, offset: 0, size: UNIFORM_RING_STRIDE };
 
   const fluxBindA = device.createBindGroup({
@@ -309,6 +412,72 @@ export function createThinFilmGpu(
       { binding: 0, resource: { buffer: hMaxUniform } },
       { binding: 1, resource: viewA },
       { binding: 2, resource: { buffer: hMaxBuffer } },
+    ],
+  });
+  const seedBindA = device.createBindGroup({
+    label: 'thinFilm-semi-seed-A',
+    layout: seedLayout,
+    entries: [
+      { binding: 0, resource: ringBinding },
+      { binding: 1, resource: viewA },
+      { binding: 2, resource: { buffer: iterateBuffer } },
+    ],
+  });
+  const seedBindB = device.createBindGroup({
+    label: 'thinFilm-semi-seed-B',
+    layout: seedLayout,
+    entries: [
+      { binding: 0, resource: ringBinding },
+      { binding: 1, resource: viewB },
+      { binding: 2, resource: { buffer: iterateBuffer } },
+    ],
+  });
+  const gsBindA = device.createBindGroup({
+    label: 'thinFilm-semi-gs-A',
+    layout: gsLayout,
+    entries: [
+      { binding: 0, resource: ringBinding },
+      { binding: 1, resource: viewA },
+      { binding: 2, resource: { buffer: iterateBuffer } },
+      { binding: 3, resource: { buffer: qxBuffer } },
+      { binding: 4, resource: { buffer: qyBuffer } },
+    ],
+  });
+  const gsBindB = device.createBindGroup({
+    label: 'thinFilm-semi-gs-B',
+    layout: gsLayout,
+    entries: [
+      { binding: 0, resource: ringBinding },
+      { binding: 1, resource: viewB },
+      { binding: 2, resource: { buffer: iterateBuffer } },
+      { binding: 3, resource: { buffer: qxBuffer } },
+      { binding: 4, resource: { buffer: qyBuffer } },
+    ],
+  });
+  const assembleBindAtoB = device.createBindGroup({
+    label: 'thinFilm-semi-assemble-AtoB',
+    layout: assembleLayout,
+    entries: [
+      { binding: 0, resource: ringBinding },
+      { binding: 1, resource: viewA },
+      { binding: 2, resource: viewB },
+      { binding: 3, resource: { buffer: qxBuffer } },
+      { binding: 4, resource: { buffer: qyBuffer } },
+      { binding: 5, resource: { buffer: drainBuffer } },
+      { binding: 6, resource: { buffer: iterateBuffer } },
+    ],
+  });
+  const assembleBindBtoA = device.createBindGroup({
+    label: 'thinFilm-semi-assemble-BtoA',
+    layout: assembleLayout,
+    entries: [
+      { binding: 0, resource: ringBinding },
+      { binding: 1, resource: viewB },
+      { binding: 2, resource: viewA },
+      { binding: 3, resource: { buffer: qxBuffer } },
+      { binding: 4, resource: { buffer: qyBuffer } },
+      { binding: 5, resource: { buffer: drainBuffer } },
+      { binding: 6, resource: { buffer: iterateBuffer } },
     ],
   });
   const hMaxBindB = device.createBindGroup({
@@ -390,6 +559,7 @@ export function createThinFilmGpu(
   });
 
   let readIsA = true;
+  let flowMode: ThinFilmFlowMode = 'explicit';
   let hMaxReadbackInFlight = false;
   const state = {
     hMaxHint: 2,
@@ -402,6 +572,8 @@ export function createThinFilmGpu(
 
   const workgroupsX = Math.ceil(width / 8);
   const workgroupsY = Math.ceil(height / 8);
+  const gsCells = (width / 2) * height;
+  const gsWorkgroups = Math.ceil(gsCells / 64);
 
   const packRingSlots = (dts: readonly number[]): void => {
     if (dts.length > UNIFORM_RING_SLOTS) {
@@ -456,20 +628,61 @@ export function createThinFilmGpu(
 
     for (let i = 0; i < dts.length; i += 1) {
       const offset = i * UNIFORM_RING_STRIDE;
-      const fluxBg = readIsA ? fluxBindA : fluxBindB;
-      const updateBg = readIsA ? updateBindAtoB : updateBindBtoA;
+      if (flowMode === 'semi') {
+        if (width % 2 !== 0) {
+          throw new RangeError('semi-implicit GS requires an even grid width');
+        }
+        const seedBg = readIsA ? seedBindA : seedBindB;
+        const fluxBg = readIsA ? fluxBindA : fluxBindB;
+        const gsBg = readIsA ? gsBindA : gsBindB;
+        const assembleBg = readIsA ? assembleBindAtoB : assembleBindBtoA;
 
-      const fluxPass = encoder.beginComputePass({ label: `thinFilm-flux-${i}` });
-      fluxPass.setPipeline(fluxPipeline);
-      fluxPass.setBindGroup(0, fluxBg, [offset]);
-      fluxPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      fluxPass.end();
+        const seedPass = encoder.beginComputePass({ label: `thinFilm-semi-seed-${i}` });
+        seedPass.setPipeline(semiSeedPipeline);
+        seedPass.setBindGroup(0, seedBg, [offset]);
+        seedPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        seedPass.end();
 
-      const updatePass = encoder.beginComputePass({ label: `thinFilm-update-${i}` });
-      updatePass.setPipeline(updatePipeline);
-      updatePass.setBindGroup(0, updateBg, [offset]);
-      updatePass.dispatchWorkgroups(workgroupsX, workgroupsY);
-      updatePass.end();
+        const exPass = encoder.beginComputePass({ label: `thinFilm-semi-ex-${i}` });
+        exPass.setPipeline(semiExplicitPipeline);
+        exPass.setBindGroup(0, fluxBg, [offset]);
+        exPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        exPass.end();
+
+        for (let sweep = 0; sweep < SEMI_IMPLICIT_SWEEPS; sweep += 1) {
+          const even = encoder.beginComputePass({ label: `thinFilm-gs-even-${i}-${sweep}` });
+          even.setPipeline(semiGsEven);
+          even.setBindGroup(0, gsBg, [offset]);
+          even.dispatchWorkgroups(gsWorkgroups);
+          even.end();
+          const odd = encoder.beginComputePass({ label: `thinFilm-gs-odd-${i}-${sweep}` });
+          odd.setPipeline(semiGsOdd);
+          odd.setBindGroup(0, gsBg, [offset]);
+          odd.dispatchWorkgroups(gsWorkgroups);
+          odd.end();
+        }
+
+        const asm = encoder.beginComputePass({ label: `thinFilm-semi-asm-${i}` });
+        asm.setPipeline(semiAssemblePipeline);
+        asm.setBindGroup(0, assembleBg, [offset]);
+        asm.dispatchWorkgroups(workgroupsX, workgroupsY);
+        asm.end();
+      } else {
+        const fluxBg = readIsA ? fluxBindA : fluxBindB;
+        const updateBg = readIsA ? updateBindAtoB : updateBindBtoA;
+
+        const fluxPass = encoder.beginComputePass({ label: `thinFilm-flux-${i}` });
+        fluxPass.setPipeline(fluxPipeline);
+        fluxPass.setBindGroup(0, fluxBg, [offset]);
+        fluxPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        fluxPass.end();
+
+        const updatePass = encoder.beginComputePass({ label: `thinFilm-update-${i}` });
+        updatePass.setPipeline(updatePipeline);
+        updatePass.setBindGroup(0, updateBg, [offset]);
+        updatePass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        updatePass.end();
+      }
 
       readIsA = !readIsA;
     }
@@ -499,6 +712,12 @@ export function createThinFilmGpu(
     width,
     height,
     simParams,
+    get flowMode() {
+      return flowMode;
+    },
+    set flowMode(mode: ThinFilmFlowMode) {
+      flowMode = mode;
+    },
     get hMaxHint() {
       return state.hMaxHint;
     },
@@ -544,6 +763,7 @@ export function createThinFilmGpu(
       drainBuffer.destroy();
       hMaxBuffer.destroy();
       uniformRing.destroy();
+      iterateBuffer.destroy();
       hMaxUniform.destroy();
       blitUniform.destroy();
       roundtripOut.destroy();
@@ -560,7 +780,14 @@ export function createThinFilmGpu(
       let remaining = Math.max(0, frameDt);
       const dts: number[] = [];
       while (remaining > 0 && dts.length < MAX_SUBSTEPS_PER_FRAME) {
-        const dtMax = maxStableDtFromHMax(state.hMaxHint, simParams);
+        const dtMax =
+          flowMode === 'semi'
+            ? maxStableDtSemiImplicitFromHMax(
+                state.hMaxHint,
+                simParams,
+                SEMI_IMPLICIT_ACCURACY_FACTOR,
+              )
+            : maxStableDtFromHMax(state.hMaxHint, simParams);
         const sub = Math.min(remaining, dtMax);
         dts.push(sub);
         remaining -= sub;
@@ -647,11 +874,13 @@ export function createThinFilmGpu(
       const level = await runLevelCompare(device, canvasFormat, n, steps);
       const mixedDt = await runMixedDtCompare(device, canvasFormat, n);
       const tilted = await runTiltedCompare(device, canvasFormat, n);
+      const semi = await runSemiCompare(device, canvasFormat, n);
       const worst = [level, mixedDt, tilted].reduce((a, b) => (b.relative > a.relative ? b : a));
       return {
         level,
         mixedDt,
         tilted,
+        semi,
         relative: worst.relative,
         maxAbsDiff: worst.maxAbsDiff,
         steps,
@@ -848,6 +1077,45 @@ async function runTiltedCompare(
       }
     }
     return await finishCompareCase(device, gpu, cpu, 'tilted', steps, n, true);
+  } finally {
+    gpu.destroy();
+  }
+}
+
+async function runSemiCompare(
+  device: GPUDevice,
+  canvasFormat: GPUTextureFormat,
+  n: number,
+): Promise<ThinFilmGpuCaseResult> {
+  const compareParams: ThinFilmParams = {
+    ...DEFAULT_THIN_FILM_PARAMS,
+    dx: 300 / n,
+    dtSafety: 1,
+    gParallelX: 0,
+    gParallelY: 0,
+  };
+  const cpu = createThinFilmState(n, n);
+  addGaussianPuddle(cpu.height, n / 2, n / 2, 1.2, 5);
+  const initial = new Float32Array(n * n);
+  for (let i = 0; i < initial.length; i += 1) {
+    initial[i] = cpu.height.data[i]!;
+  }
+  const dt = 20 * explicitCapillaryDt(cpu.height, compareParams);
+  const steps = 4;
+  const dts = Array.from({ length: steps }, () => dt);
+
+  const gpu = createThinFilmGpu(device, canvasFormat, n, n, compareParams);
+  try {
+    gpu.flowMode = 'semi';
+    gpu.resetPuddle();
+    gpu.writeHeight(initial);
+    const encoder = device.createCommandEncoder({ label: 'compare-semi' });
+    gpu.encodeSubsteps(encoder, dts);
+    device.queue.submit([encoder.finish()]);
+    for (const stepDt of dts) {
+      thinFilmSubstepSemiImplicit(cpu, stepDt, compareParams);
+    }
+    return await finishCompareCase(device, gpu, cpu, 'semi', steps, n, false);
   } finally {
     gpu.destroy();
   }
