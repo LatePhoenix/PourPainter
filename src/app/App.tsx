@@ -173,6 +173,10 @@ export function App() {
                 : ''}
             </div>
           ) : null}
+          {stats.compareSemiRel !== null ? (
+            <div>Semi rel {stats.compareSemiRel.toExponential(2)}</div>
+          ) : null}
+          <div>Mode {stats.flowMode}</div>
           {stats.uniformRoundTripOk !== null ? (
             <div>Uniforms {stats.uniformRoundTripOk ? 'ok' : 'FAIL'}</div>
           ) : null}
@@ -182,6 +186,18 @@ export function App() {
             </button>
             <button type="button" disabled={busy} onClick={runRoundTrip}>
               Uniform round-trip
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                const controller = controllerRef.current;
+                if (!controller || !stats) return;
+                controller.setFlowMode(stats.flowMode === 'semi' ? 'explicit' : 'semi');
+                setStats(controller.getStats());
+              }}
+            >
+              {stats.flowMode === 'semi' ? 'Use explicit' : 'Use semi-implicit'}
             </button>
           </div>
           <div className={styles.debugHint}>` to hide</div>

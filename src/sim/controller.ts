@@ -13,6 +13,7 @@ import type {
   SimSettings,
   SimStats,
   SimTool,
+  FlowMode,
   UniformRoundTripResult,
 } from './types';
 
@@ -68,6 +69,8 @@ class SimControllerImpl implements SimController {
   private compareMixedRel: number | null = null;
   private compareTiltRel: number | null = null;
   private compareTiltDrainRel: number | null = null;
+  private compareSemiRel: number | null = null;
+  private flowMode: FlowMode = 'explicit';
   private uniformRoundTripOk: boolean | null = null;
   private simSecondsPerWallSecond = 0;
   private lastFrameTs: number | null = null;
@@ -227,6 +230,8 @@ class SimControllerImpl implements SimController {
       compareMixedRel: this.compareMixedRel,
       compareTiltRel: this.compareTiltRel,
       compareTiltDrainRel: this.compareTiltDrainRel,
+      compareSemiRel: this.compareSemiRel,
+      flowMode: this.flowMode,
       uniformRoundTripOk: this.uniformRoundTripOk,
     };
   }
@@ -243,7 +248,16 @@ class SimControllerImpl implements SimController {
     this.compareMixedRel = result.mixedDt.relative;
     this.compareTiltRel = result.tilted.relative;
     this.compareTiltDrainRel = result.tilted.drainRelative;
+    this.compareSemiRel = result.semi.relative;
     return result;
+  }
+
+  setFlowMode(mode: FlowMode): void {
+    this.assertReady();
+    this.flowMode = mode;
+    if (this.film) {
+      this.film.flowMode = mode;
+    }
   }
 
   async checkUniformRoundTrip(): Promise<UniformRoundTripResult> {

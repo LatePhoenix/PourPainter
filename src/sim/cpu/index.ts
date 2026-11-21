@@ -27,3 +27,13 @@ export {
   thinFilmSubstep,
   totalFilmVolumeMm3,
 } from './thinFilm';
+export {
+  SEMI_IMPLICIT_ACCURACY_FACTOR,
+  SEMI_IMPLICIT_SWEEPS,
+  capillaryDiagonal,
+  capillaryDivergence,
+  explicitCapillaryDt,
+  maxStableDtSemiImplicit,
+  thinFilmStepSemiImplicit,
+  thinFilmSubstepSemiImplicit,
+} from './thinFilmSemi';
