@@ -23,5 +23,17 @@ Starter prompt for Claude Code:
 > Audit all tasks in `review`.
 
 ## Requirements
-- Node.js 20+ and Git
+- Node.js 20+ and Git (see `.nvmrc`)
 - Chrome or Edge (WebGPU)
+
+## Commands
+| Command | What it does |
+|---|---|
+| `npm install` | Install dependencies |
+| `npm run dev` | Vite dev server |
+| `npm run build` | Typecheck + production build |
+| `npm test` | Vitest unit tests (single run) |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc -b` |
+| `npm run check` | typecheck + lint + test (required before `review`) |
+| `npm run format` | Prettier write |

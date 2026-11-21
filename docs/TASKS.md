@@ -9,20 +9,30 @@ Only the current and next milestone are fully specified. Later ones get filled i
 ## M0: Foundations
 
 ### M0-01 Project scaffold
-- **Status:** todo
+- **Status:** review
 - **Depends on:** none
 - **Goal:** A working Vite + React + TypeScript project with the tooling every later task relies on.
 - **Acceptance criteria:**
-  - [ ] Vite + React 18 + TypeScript with `strict: true` (and `noUncheckedIndexedAccess`)
-  - [ ] ESLint (typescript-eslint, react-hooks) and Prettier configured
-  - [ ] Vitest configured; one trivial passing test
-  - [ ] Scripts: `dev`, `build`, `test`, `lint`, `typecheck`, `check` (= typecheck + lint + test)
-  - [ ] Folder layout from AGENTS.md created, each folder with an `index.ts` (or `.gitkeep` for `shaders/`)
-  - [ ] `.wgsl` files importable as strings (`?raw`) with a type declaration
-  - [ ] An ESLint rule (e.g. `no-restricted-imports`) that blocks `react` and `src/app` imports from `src/sim`, `src/domain` and `src/render`
-  - [ ] GitHub Actions workflow running `npm ci && npm run check` on push/PR
-  - [ ] README "Commands" section updated if anything differs
-- **Handoff notes:** _(implementer fills in)_
+  - [x] Vite + React 18 + TypeScript with `strict: true` (and `noUncheckedIndexedAccess`)
+  - [x] ESLint (typescript-eslint, react-hooks) and Prettier configured
+  - [x] Vitest configured; one trivial passing test
+  - [x] Scripts: `dev`, `build`, `test`, `lint`, `typecheck`, `check` (= typecheck + lint + test)
+  - [x] Folder layout from AGENTS.md created, each folder with an `index.ts` (or `.gitkeep` for `shaders/`)
+  - [x] `.wgsl` files importable as strings (`?raw`) with a type declaration
+  - [x] An ESLint rule (e.g. `no-restricted-imports`) that blocks `react` and `src/app` imports from `src/sim`, `src/domain` and `src/render`
+  - [x] GitHub Actions workflow running `npm ci && npm run check` on push/PR
+  - [x] README "Commands" section updated if anything differs
+- **Handoff notes:**
+  - Scaffolded Vite 6 + React 18 + TS 5.8 with `strict` and `noUncheckedIndexedAccess` in app/node/vitest tsconfigs.
+  - Tooling: ESLint 9 flat config (typescript-eslint, react-hooks, react-refresh, prettier), Prettier, Vitest 3.
+  - Scripts match the task list; `check` = typecheck + lint + test. Also added `format` and `test:watch`.
+  - Folder layout under `src/` with barrel `index.ts` files; `src/sim/shaders/` uses `.gitkeep` plus a `placeholder.wgsl` to prove `?raw` imports (`src/vite-env.d.ts`, `src/sim/gpu/wgslRaw.ts`, vitest coverage).
+  - `no-restricted-imports` on `src/sim`, `src/domain`, `src/render` blocks `react`/`react-dom` and `src/app` (verified with a probe file).
+  - CI: `.github/workflows/check.yml` runs `npm ci && npm run check` on push/PR (`ubuntu-latest`, concurrency cancel-in-progress).
+  - README Commands section added. `.nvmrc` = 20.
+  - **Dependency note:** added `zustand` early (listed in AGENTS.md / PLAN stack) even though no store is wired yet; added `@types/node` for Vite/Vitest path resolution.
+  - `npm run check` and `npm run build` pass locally (Node 26 host; engines/CI pin ≥20).
+  - No plan deviations. Next tasks (M0-02 / M0-03) can start once this is audited.
 
 ### M0-02 Domain types, physics constants, seeded RNG
 - **Status:** todo
